@@ -13,9 +13,44 @@ from tkinter import messagebox, ttk
 import tkinterdnd2
 import re
 
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.ini")
+APP_CONFIG_DIR_NAME = "查房表更新工具"
+CONFIG_FILENAME = "config.ini"
 DEFAULT_WARD = "01"
 DEFAULT_GROUP = "默认医疗组"
+
+
+def get_app_dir():
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def get_user_config_dir():
+    base_dir = (
+        os.environ.get("LOCALAPPDATA")
+        or os.environ.get("APPDATA")
+        or os.path.expanduser("~")
+    )
+    return os.path.join(base_dir, APP_CONFIG_DIR_NAME)
+
+
+def get_config_file():
+    if getattr(sys, "frozen", False):
+        return os.path.join(get_user_config_dir(), CONFIG_FILENAME)
+    return os.path.join(get_app_dir(), CONFIG_FILENAME)
+
+
+def get_legacy_config_files():
+    if not getattr(sys, "frozen", False):
+        return []
+    return [
+        os.path.join(get_app_dir(), CONFIG_FILENAME),
+        os.path.join(os.getcwd(), CONFIG_FILENAME),
+    ]
+
+
+CONFIG_FILE = get_config_file()
+
 
 def get_resource_path(relative_path):
     if getattr(sys, 'frozen', False):
@@ -30,11 +65,18 @@ def load_config():
         'groups': {DEFAULT_GROUP: []},
         'current_group': DEFAULT_GROUP,
     }
-    if os.path.exists(CONFIG_FILE):
+    config_file = CONFIG_FILE
+    if not os.path.exists(config_file):
+        for legacy_file in get_legacy_config_files():
+            if os.path.exists(legacy_file):
+                config_file = legacy_file
+                break
+
+    if os.path.exists(config_file):
         try:
             import configparser
             cp = configparser.ConfigParser(interpolation=None)
-            cp.read(CONFIG_FILE, encoding='utf-8')
+            cp.read(config_file, encoding='utf-8')
             cfg['row_height'] = cp.getint('Settings', 'row_height', fallback=30)
             ward = cp.get('Settings', 'ward', fallback=DEFAULT_WARD).strip()
             if ward.isdigit():
@@ -103,6 +145,9 @@ def save_config(row_height=None, ward=None, beds=None, groups=None, current_grou
             cp.set('Settings', 'medical_groups', json.dumps(groups, ensure_ascii=False))
         if current_group is not None:
             cp.set('Settings', 'current_group', str(current_group))
+        config_dir = os.path.dirname(CONFIG_FILE)
+        if config_dir:
+            os.makedirs(config_dir, exist_ok=True)
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             cp.write(f)
     except Exception:
