@@ -1,5 +1,4 @@
-openpyxl
-tkinterdnd2
-xlrd
-xlwt
-
+openpyxl==3.1.5
+tkinterdnd2==0.4.3
+xlrd==1.2.0
+xlwt==1.3.0

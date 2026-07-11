@@ -7,11 +7,6 @@ import math
 import unicodedata
 from copy import copy
 from collections import defaultdict
-import xlrd
-import xlwt
-from openpyxl import load_workbook
-from openpyxl.styles import Alignment
-from openpyxl.utils import get_column_letter
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import messagebox, ttk
@@ -313,6 +308,7 @@ class App:
         self.process_btn = None
         self.clear_btn = None
         self.row_height_var = tk.IntVar()
+        self.row_height_text_var = tk.StringVar()
         self.ward_var = tk.StringVar()
         self.group_var = tk.StringVar()
         self.new_group_var = tk.StringVar()
@@ -324,367 +320,37 @@ class App:
         self.maintenance_status_label = None
         cfg = load_config()
         self.row_height_var.set(max(20, min(80, int(cfg["row_height"]))))
+        self.row_height_text_var.set(str(self.row_height_var.get()))
         self.ward_var.set(cfg["ward"])
         self.group_beds = cfg["groups"]
         self.group_var.set(cfg["current_group"])
         self.setup_ui()
 
-    def setup_ui(self):
-        self.root.title("查房表更新工具")
-        self.root.geometry("900x860")
-        self.root.resizable(False, False)
-        self.root.configure(bg="#F5F5F5")
-        
+    def normalize_row_height_value(self, value=None):
+        if value is None:
+            value = self.row_height_var.get()
         try:
-            self.root.iconbitmap(get_resource_path("icon.ico"))
+            value = int(float(str(value).strip()))
         except Exception:
-            pass
-        
-        main_frame = tk.Frame(self.root, bg="#F5F5F5")
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-        
-        title_label = tk.Label(
-            main_frame,
-            text="查房表更新工具",
-            font=("微软雅黑", 24, "bold"),
-            bg="#F5F5F5",
-            fg="#2C3E50"
-        )
-        title_label.pack(pady=(0, 10))
-        
-        subtitle_label = tk.Label(
-            main_frame,
-            text="拖入两个查房表Excel文件，自动合并更新床位信息",
-            font=("微软雅黑", 10),
-            bg="#F5F5F5",
-            fg="#7F8C8D"
-        )
-        subtitle_label.pack(pady=(0, 20))
-        
-        zones_frame = tk.Frame(main_frame, bg="#F5F5F5")
-        zones_frame.pack(pady=10)
-        
-        zone_a_label = tk.Label(
-            zones_frame,
-            text="文档A（从病历系统导出的列表）",
-            font=("微软雅黑", 11, "bold"),
-            bg="#F5F5F5",
-            fg="#3498DB"
-        )
-        zone_a_label.grid(row=0, column=0, padx=10, pady=(0, 5), sticky=tk.SW)
-        
-        self.drop_zone_a = DropZone(
-            zones_frame,
-            "文档A（从病历系统导出的列表）\n单击选择文件，或将 Excel 拖入此区域",
-            color="#EBF5FB",
-            zone_letter='A'
-        )
-        self.drop_zone_a.bind_select(lambda: self.select_file("A"))
-        self.drop_zone_a.register_dnd(lambda e: self.on_drop(e, "A"))
-        self.drop_zone_a.parent_app = self
-        self.drop_zone_a.grid(row=1, column=0, padx=10, pady=5)
-        
-        zone_b_label = tk.Label(
-            zones_frame,
-            text="文档B（昨日查房表）",
-            font=("微软雅黑", 11, "bold"),
-            bg="#F5F5F5",
-            fg="#27AE60"
-        )
-        zone_b_label.grid(row=0, column=1, padx=10, pady=(0, 5), sticky=tk.SW)
-        
-        self.drop_zone_b = DropZone(
-            zones_frame,
-            "文档B（昨日查房表）\n单击选择文件，或将 Excel 拖入此区域",
-            color="#E8F8F5",
-            zone_letter='B'
-        )
-        self.drop_zone_b.bind_select(lambda: self.select_file("B"))
-        self.drop_zone_b.register_dnd(lambda e: self.on_drop(e, "B"))
-        self.drop_zone_b.parent_app = self
-        self.drop_zone_b.grid(row=1, column=1, padx=10, pady=5)
-        
-        options_frame = tk.Frame(main_frame, bg="#F5F5F5")
-        options_frame.pack(pady=15)
+            try:
+                value = int(self.row_height_var.get())
+            except Exception:
+                value = 30
+        return max(20, min(80, value))
 
-        row_height_frame = tk.Frame(options_frame, bg="#F5F5F5")
-        row_height_frame.pack()
-        row_height_label = tk.Label(
-            row_height_frame,
-            text="数据行行高（磅）",
-            font=("微软雅黑", 10),
-            bg="#F5F5F5",
-            fg="#555555"
-        )
-        row_height_label.pack(side=tk.LEFT, padx=(0, 8))
+    def set_row_height(self, value=None, persist=True):
+        value = self.normalize_row_height_value(value)
+        if self.row_height_var.get() != value:
+            self.row_height_var.set(value)
+        if self.row_height_text_var.get() != str(value):
+            self.row_height_text_var.set(str(value))
+        if persist:
+            save_config(row_height=value)
+        return value
 
-        row_height_slider = tk.Scale(
-            row_height_frame,
-            from_=20,
-            to=80,
-            orient=tk.HORIZONTAL,
-            length=260,
-            showvalue=0,
-            sliderlength=16,
-            troughcolor="#BDC3C7",
-            bg="#F5F5F5",
-            bd=0,
-            highlightthickness=0,
-            variable=self.row_height_var,
-            command=lambda v: save_config(int(float(v))),
-        )
-        row_height_slider.pack(side=tk.LEFT, padx=(0, 6))
-
-        row_height_value_label = tk.Label(
-            row_height_frame,
-            text=f"{self.row_height_var.get()} 磅",
-            font=("微软雅黑", 10, "bold"),
-            bg="#F5F5F5",
-            fg="#2980B9",
-            width=7,
-            anchor="w",
-        )
-        row_height_value_label.pack(side=tk.LEFT)
-
-        def update_height_label(*_):
-            row_height_value_label.config(text=f"{self.row_height_var.get()} 磅")
-
-        self.row_height_var.trace_add("write", update_height_label)
-
-        maintenance_frame = tk.LabelFrame(
-            options_frame,
-            text="病区、床位维护",
-            font=("微软雅黑", 10, "bold"),
-            bg="#F5F5F5",
-            fg="#34495E",
-            padx=12,
-            pady=10,
-        )
-        maintenance_frame.pack(pady=(14, 0))
-
-        ward_frame = tk.Frame(maintenance_frame, bg="#F5F5F5")
-        ward_frame.pack(side=tk.LEFT, padx=(0, 18), anchor=tk.N)
-
-        tk.Label(
-            ward_frame,
-            text="病区",
-            font=("微软雅黑", 10),
-            bg="#F5F5F5",
-            fg="#555555",
-        ).pack(anchor=tk.W)
-
-        ward_entry = tk.Entry(
-            ward_frame,
-            textvariable=self.ward_var,
-            width=6,
-            justify=tk.CENTER,
-            font=("微软雅黑", 12, "bold"),
-        )
-        ward_entry.pack(pady=(4, 2), anchor=tk.W)
-        ward_entry.bind("<KeyRelease>", self.on_ward_changed)
-        ward_entry.bind("<FocusOut>", self.on_ward_focus_out)
-
-        tk.Label(
-            ward_frame,
-            text="01-99",
-            font=("微软雅黑", 9),
-            bg="#F5F5F5",
-            fg="#7F8C8D",
-        ).pack(anchor=tk.W)
-
-        group_frame = tk.Frame(maintenance_frame, bg="#F5F5F5")
-        group_frame.pack(side=tk.LEFT, padx=(0, 18), anchor=tk.N)
-
-        tk.Label(
-            group_frame,
-            text="医疗组",
-            font=("微软雅黑", 10),
-            bg="#F5F5F5",
-            fg="#555555",
-        ).pack(anchor=tk.W)
-
-        self.group_combo = ttk.Combobox(
-            group_frame,
-            textvariable=self.group_var,
-            values=list(self.group_beds.keys()),
-            state="readonly",
-            width=14,
-            font=("微软雅黑", 10),
-        )
-        self.group_combo.pack(pady=(4, 4), anchor=tk.W)
-        self.group_combo.bind("<<ComboboxSelected>>", self.on_group_selected)
-
-        new_group_frame = tk.Frame(group_frame, bg="#F5F5F5")
-        new_group_frame.pack(anchor=tk.W)
-
-        tk.Entry(
-            new_group_frame,
-            textvariable=self.new_group_var,
-            width=10,
-            font=("微软雅黑", 9),
-        ).pack(side=tk.LEFT)
-
-        tk.Button(
-            new_group_frame,
-            text="新建",
-            font=("微软雅黑", 9),
-            bg="#ECF0F1",
-            relief=tk.FLAT,
-            width=5,
-            command=self.create_medical_group,
-        ).pack(side=tk.LEFT, padx=(4, 0))
-
-        group_actions_frame = tk.Frame(group_frame, bg="#F5F5F5")
-        group_actions_frame.pack(anchor=tk.W, pady=(4, 0))
-
-        tk.Button(
-            group_actions_frame,
-            text="改名",
-            font=("微软雅黑", 9),
-            bg="#ECF0F1",
-            relief=tk.FLAT,
-            width=5,
-            command=self.rename_medical_group,
-        ).pack(side=tk.LEFT)
-
-        tk.Button(
-            group_actions_frame,
-            text="删除",
-            font=("微软雅黑", 9),
-            bg="#FDEDEC",
-            fg="#C0392B",
-            relief=tk.FLAT,
-            width=5,
-            command=self.delete_medical_group,
-        ).pack(side=tk.LEFT, padx=(4, 0))
-
-        bed_frame = tk.Frame(maintenance_frame, bg="#F5F5F5")
-        bed_frame.pack(side=tk.LEFT, anchor=tk.N)
-
-        tk.Label(
-            bed_frame,
-            text="床号（可多选 01-50）",
-            font=("微软雅黑", 10),
-            bg="#F5F5F5",
-            fg="#555555",
-        ).pack(anchor=tk.W)
-
-        bed_select_frame = tk.Frame(bed_frame, bg="#F5F5F5")
-        bed_select_frame.pack(pady=(4, 0))
-
-        self.bed_normal_font = ("Consolas", 9)
-        self.bed_selected_font = ("Consolas", 9, "bold")
-
-        for i in range(1, 51):
-            bed = f"{i:02d}"
-            var = tk.BooleanVar(value=False)
-            self.bed_vars[bed] = var
-            cb = tk.Checkbutton(
-                bed_select_frame,
-                text=bed,
-                variable=var,
-                command=self.on_beds_changed,
-                font=self.bed_normal_font,
-                bg="#F5F5F5",
-                activebackground="#F5F5F5",
-                fg="#2C3E50",
-                activeforeground="#2C3E50",
-                selectcolor="#FFFFFF",
-                indicatoron=False,
-                relief=tk.RAISED,
-                bd=1,
-                width=4,
-                padx=2,
-                pady=1,
-            )
-            cb.grid(row=(i - 1) // 10, column=(i - 1) % 10, padx=2, pady=1, sticky=tk.W)
-            self.bed_buttons[bed] = cb
-
-        bed_buttons_frame = tk.Frame(maintenance_frame, bg="#F5F5F5")
-        bed_buttons_frame.pack(side=tk.LEFT, padx=(12, 0), anchor=tk.N)
-
-        tk.Button(
-            bed_buttons_frame,
-            text="全选",
-            font=("微软雅黑", 9),
-            bg="#ECF0F1",
-            relief=tk.FLAT,
-            width=8,
-            command=self.select_all_beds,
-        ).pack(pady=(20, 6))
-
-        tk.Button(
-            bed_buttons_frame,
-            text="清空",
-            font=("微软雅黑", 9),
-            bg="#ECF0F1",
-            relief=tk.FLAT,
-            width=8,
-            command=self.clear_bed_selection,
-        ).pack()
-
-        self.maintenance_status_label = tk.Label(
-            maintenance_frame,
-            text="",
-            font=("微软雅黑", 9),
-            bg="#F5F5F5",
-            fg="#7F8C8D",
-            width=22,
-            height=3,
-            anchor=tk.W,
-        )
-        self.maintenance_status_label.pack(side=tk.LEFT, padx=(14, 0), anchor=tk.N, pady=(22, 0))
-
-        self.apply_initial_bed_selection()
-        self.update_maintenance_status()
-        
-        status_frame = tk.Frame(main_frame, bg="#ECEFF1")
-        status_frame.pack(fill=tk.X, pady=15)
-        
-        self.status_label = tk.Label(
-            status_frame,
-            text="请拖入两个Excel文件到上方区域",
-            font=("微软雅黑", 11),
-            bg="#ECEFF1",
-            fg="#34495E",
-            anchor=tk.CENTER,
-            pady=12
-        )
-        self.status_label.pack(fill=tk.X)
-        
-        buttons_frame = tk.Frame(main_frame, bg="#F5F5F5")
-        buttons_frame.pack(pady=20)
-        
-        self.process_btn = tk.Button(
-            buttons_frame,
-            text="开始处理",
-            font=("微软雅黑", 14, "bold"),
-            bg="#3498DB",
-            fg="white",
-            activebackground="#2980B9",
-            activeforeground="white",
-            relief=tk.FLAT,
-            padx=40,
-            pady=10,
-            state=tk.DISABLED,
-            command=self.start_processing
-        )
-        self.process_btn.pack(side=tk.LEFT, padx=10)
-        
-        self.clear_btn = tk.Button(
-            buttons_frame,
-            text="清除重选",
-            font=("微软雅黑", 14),
-            bg="#95A5A6",
-            fg="white",
-            activebackground="#7F8C8D",
-            activeforeground="white",
-            relief=tk.FLAT,
-            padx=40,
-            pady=10,
-            command=self.clear_all
-        )
-        self.clear_btn.pack(side=tk.LEFT, padx=10)
+    def commit_row_height(self, *_):
+        self.set_row_height(self.row_height_text_var.get(), persist=True)
+        return True
 
     def setup_ui(self):
         self.root.title("查房表更新工具")
@@ -815,16 +481,6 @@ class App:
             anchor=tk.W,
         ).pack(fill=tk.X, pady=(5, 0))
 
-        tk.Label(
-            top_frame,
-            text="配置已自动保存",
-            font=font_bold,
-            fg="#07505A",
-            bg="#DFF8F8",
-            padx=14,
-            pady=8,
-        ).pack(side=tk.RIGHT, anchor=tk.N)
-
         files_frame = tk.Frame(main, bg="#F5F8FB")
         files_frame.pack(fill=tk.X, pady=(0, 18))
 
@@ -921,9 +577,8 @@ class App:
         compact_height_frame.pack(fill=tk.X)
 
         def adjust_row_height(delta):
-            value = max(20, min(80, int(self.row_height_var.get()) + delta))
-            self.row_height_var.set(value)
-            save_config(row_height=value)
+            value = self.normalize_row_height_value() + delta
+            self.set_row_height(value, persist=True)
 
         tk.Button(
             compact_height_frame,
@@ -937,18 +592,20 @@ class App:
             command=lambda: adjust_row_height(-1),
         ).pack(side=tk.LEFT, ipady=0)
 
-        compact_height_value_label = tk.Label(
+        compact_height_value_entry = tk.Entry(
             compact_height_frame,
-            text=f"{self.row_height_var.get()} 磅",
+            textvariable=self.row_height_text_var,
             font=("Microsoft YaHei UI", 11, "bold"),
             bg="#F8FAFC",
             fg="#246BFE",
             width=9,
-            anchor=tk.CENTER,
+            justify=tk.CENTER,
             relief=tk.SOLID,
             bd=1,
         )
-        compact_height_value_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6, ipady=3)
+        compact_height_value_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6, ipady=3)
+        compact_height_value_entry.bind("<Return>", self.commit_row_height)
+        compact_height_value_entry.bind("<FocusOut>", self.commit_row_height)
 
         tk.Button(
             compact_height_frame,
@@ -963,7 +620,9 @@ class App:
         ).pack(side=tk.LEFT, ipady=0)
 
         def update_compact_height_label(*_):
-            compact_height_value_label.config(text=f"{self.row_height_var.get()} 磅")
+            value = str(self.row_height_var.get())
+            if self.row_height_text_var.get() != value:
+                self.row_height_text_var.set(value)
 
         self.row_height_var.trace_add("write", update_compact_height_label)
 
@@ -1211,65 +870,6 @@ class App:
         self.apply_group_bed_selection()
         self.persist_maintenance_config()
         self.update_maintenance_status()
-
-    def rename_medical_group(self):
-        old_name = self.current_group_name()
-        new_name = self.new_group_var.get().strip()
-        if not new_name:
-            messagebox.showwarning("提示", "请输入新的医疗组名称")
-            return
-        if new_name == old_name:
-            self.new_group_var.set("")
-            return
-        if new_name in self.group_beds:
-            messagebox.showwarning("提示", "该医疗组名称已存在")
-            return
-
-        self.save_current_group_beds()
-        updated_groups = {}
-        for group_name, beds in self.group_beds.items():
-            if group_name == old_name:
-                updated_groups[new_name] = beds
-            else:
-                updated_groups[group_name] = beds
-        self.group_beds = updated_groups
-        self.group_var.set(new_name)
-        self.new_group_var.set("")
-        self.refresh_group_combo()
-        self.apply_group_bed_selection()
-        self.persist_maintenance_config()
-        self.update_maintenance_status()
-
-    def delete_medical_group(self):
-        group_name = self.current_group_name()
-        if len(self.group_beds) <= 1:
-            messagebox.showwarning("提示", "至少需要保留一个医疗组")
-            return
-        if not messagebox.askyesno("确认删除", f"确定删除医疗组“{group_name}”吗？\n该组维护的床位配置也会删除。"):
-            return
-
-        self.group_beds.pop(group_name, None)
-        next_group = next(iter(self.group_beds), DEFAULT_GROUP)
-        self.group_var.set(next_group)
-        self.new_group_var.set("")
-        self.refresh_group_combo()
-        self.apply_group_bed_selection()
-        self.persist_maintenance_config()
-        self.update_maintenance_status()
-
-    def create_medical_group(self):
-        name = self.new_group_var.get().strip()
-        if not name:
-            messagebox.showwarning("提示", "请输入医疗组名称")
-            return
-        if name not in self.group_beds:
-            self.group_beds[name] = []
-            self.refresh_group_combo()
-        self.group_var.set(name)
-        self.new_group_var.set("")
-        self.apply_group_bed_selection()
-        self.persist_maintenance_config()
-        self.update_maintenance_status()
         self.update_status()
 
     def rename_medical_group(self):
@@ -1411,13 +1011,6 @@ class App:
             return
         ward = self.normalize_ward_value() or DEFAULT_WARD
         count = len(self.get_selected_beds())
-        self.maintenance_status_label.config(text=f"{self.current_group_name()}\n病区 {ward}，已选 {count} 张床")
-
-    def update_maintenance_status(self):
-        if not self.maintenance_status_label:
-            return
-        ward = self.normalize_ward_value() or DEFAULT_WARD
-        count = len(self.get_selected_beds())
         self.maintenance_status_label.config(text=f"{self.current_group_name()} | 病区 {ward} | 已选 {count} 张床")
         if hasattr(self, "ward_stat_label"):
             self.ward_stat_label.config(text=ward)
@@ -1461,71 +1054,6 @@ class App:
             self.drop_zone_b.set_file(path)
         self.update_button_state()
         self.update_status()
-
-    def select_file(self, zone):
-        from tkinter import filedialog
-        filetypes = [("Excel文件", "*.xls *.xlsx"), ("所有文件", "*.*")]
-        title = (
-            "选择文档A（从病历系统导出的列表）"
-            if zone == "A"
-            else "选择文档B（昨日查房表）"
-        )
-        path = filedialog.askopenfilename(title=title, filetypes=filetypes)
-        if path:
-            self.set_file(zone, path)
-
-    def update_button_state(self):
-        if self.file_a and self.file_b:
-            self.process_btn.config(state=tk.NORMAL, bg="#3498DB")
-        else:
-            self.process_btn.config(state=tk.DISABLED, bg="#BDC3C7")
-
-    def update_status(self):
-        if self.file_a and self.file_b:
-            self.status_label.config(
-                text=f"已就绪：{os.path.basename(self.file_a)} + {os.path.basename(self.file_b)}",
-                fg="#27AE60"
-            )
-        elif self.file_a:
-            self.status_label.config(
-                text=f"已选择文档A：{os.path.basename(self.file_a)}，请继续拖入文档B（昨日查房表）",
-                fg="#F39C12",
-            )
-        elif self.file_b:
-            self.status_label.config(
-                text=f"已选择文档B：{os.path.basename(self.file_b)}，请继续拖入文档A（从病历系统导出的列表）",
-                fg="#F39C12",
-            )
-        else:
-            self.status_label.config(text="请拖入两个Excel文件到上方区域", fg="#34495E")
-
-    def clear_all(self):
-        self.file_a = None
-        self.file_b = None
-        self.drop_zone_a.clear()
-        self.drop_zone_b.clear()
-        self.update_button_state()
-        self.update_status()
-
-    def start_processing(self):
-        self.process_btn.config(state=tk.DISABLED, bg="#BDC3C7")
-        self.status_label.config(text="处理中...", fg="#3498DB")
-        self.root.update()
-        
-        try:
-            path_a, path_b = self.identify_files(self.file_a, self.file_b)
-            result = self.process_files(path_a, path_b)
-            
-            if result:
-                self.status_label.config(text=f"处理完成！保存至：{result}", fg="#27AE60")
-                os.startfile(result)
-            else:
-                self.status_label.config(text="处理失败，请检查文件格式", fg="#E74C3C")
-        except Exception as e:
-            self.status_label.config(text="处理失败", fg="#E74C3C")
-            messagebox.showerror("错误", f"处理文件时发生错误：\n{str(e)}")
-        finally:
-            self.update_button_state()
 
     def select_file(self, zone):
         from tkinter import filedialog
@@ -1579,6 +1107,7 @@ class App:
         self.update_status()
 
     def start_processing(self):
+        self.commit_row_height()
         self.process_btn.config(state=tk.DISABLED, bg="#AEBECD")
         self.status_label.config(text="处理中，请稍候...", fg="#246BFE")
         self.root.update()
@@ -1599,6 +1128,8 @@ class App:
             self.update_button_state()
 
     def identify_files(self, path_a, path_b):
+        import xlrd
+
         file_a_has_status = False
         file_b_has_status = False
         
@@ -1665,9 +1196,7 @@ class App:
                         if col_name in found_cols:
                             break
             
-            match_count = sum(1 for col in required_cols if col in found_cols)
-            
-            if match_count >= 3:
+            if all(col in found_cols for col in required_cols):
                 return row_idx, found_cols
         
         return -1, {}
@@ -1817,7 +1346,7 @@ class App:
         return max(1, line_count)
 
     def _estimate_row_height(self, row_data, col_count, get_column_width_chars, get_font_size=None):
-        base_height = max(1, int(self.row_height_var.get()))
+        base_height = self.normalize_row_height_value()
         max_height = base_height
         for col_idx in range(col_count):
             value = row_data[col_idx] if col_idx < len(row_data) else ""
@@ -1836,6 +1365,8 @@ class App:
         return min(409, int(math.ceil(max_height)))
 
     def process_files(self, a_path, b_path):
+        import xlrd
+
         wb_a = xlrd.open_workbook(a_path, formatting_info=True)
         ws_a = wb_a.sheet_by_index(0)
         
@@ -1993,6 +1524,10 @@ class App:
         return self._save_output_xls(data_rows, header_rows, col_count, b_path, ws_b_original, data_source_rows)
 
     def _save_output_xlsx(self, data_rows, header_rows, col_count, b_path, data_source_rows=None):
+        from openpyxl import load_workbook
+        from openpyxl.styles import Alignment
+        from openpyxl.utils import get_column_letter
+
         wb = load_workbook(b_path, rich_text=True)
         ws = wb.active
         header_row_count = len(header_rows)
@@ -2000,7 +1535,6 @@ class App:
             data_source_rows = [None] * len(data_rows)
 
         data_style_rows = []
-        data_style_heights = []
         for source_row in range(header_row_count + 1, ws.max_row + 1):
             style_row = []
             for col_idx in range(col_count):
@@ -2014,7 +1548,6 @@ class App:
                     "font_size": source_cell.font.sz or 11,
                 })
             data_style_rows.append(style_row)
-            data_style_heights.append(ws.row_dimensions[source_row].height)
         template_style_row = data_style_rows[0] if data_style_rows else None
 
         while ws.max_row > header_row_count:
@@ -2029,12 +1562,10 @@ class App:
             target_row = header_row_count + row_idx + 1
             source_row_idx = data_source_rows[row_idx] if row_idx < len(data_source_rows) else None
             row_source_styles = None
-            source_row_height = None
             if source_row_idx is not None:
                 style_idx = source_row_idx - header_row_count
                 if 0 <= style_idx < len(data_style_rows):
                     row_source_styles = data_style_rows[style_idx]
-                    source_row_height = data_style_heights[style_idx]
             if row_source_styles is None:
                 row_source_styles = template_style_row
             for col_idx, value in enumerate(row_data):
@@ -2069,8 +1600,6 @@ class App:
                     styles[col_idx]["font_size"] if styles and col_idx < len(styles) else 11
                 ),
             )
-            if source_row_height:
-                estimated_height = max(estimated_height, float(source_row_height))
             ws.row_dimensions[target_row].height = estimated_height
         # 打印区域：与表同宽，覆盖全部数据行
         last_data_row = header_row_count + len(data_rows)
@@ -2104,6 +1633,8 @@ class App:
 
     def _save_output_xls(self, data_rows, header_rows, col_count, b_path, ws_src, data_source_rows=None):
         """老版 .xls：用 xlwt 写出；表头区完全按 B 表合并（仅保留整段落在表头内的合并）。"""
+        import xlwt
+
         wb = xlwt.Workbook(encoding="utf-8")
         self._copy_xls_palette(ws_src.book, wb)
         ws = wb.add_sheet("Sheet1")
@@ -2323,15 +1854,6 @@ class App:
             except Exception:
                 return 11
 
-        def _xls_source_row_height_points(row_idx):
-            try:
-                ri = ws_src.rowinfo_map.get(row_idx)
-                if ri and ri.height > 0:
-                    return float(ri.height) / 20.0
-            except Exception:
-                pass
-            return None
-
         for i, row_data in enumerate(data_rows):
             rr = n_header + i
             source_rr = data_source_rows[i] if i < len(data_source_rows) else None
@@ -2347,9 +1869,6 @@ class App:
                 _xls_col_width_chars,
                 lambda col_idx, row_idx=source_rr: _xls_font_size_points(row_idx, col_idx),
             )
-            source_height = _xls_source_row_height_points(source_rr)
-            if source_height:
-                estimated_height = max(estimated_height, source_height)
             row_obj.height = int(
                 estimated_height * 20
             )
