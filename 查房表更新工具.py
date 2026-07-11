@@ -1650,13 +1650,35 @@ class App:
         last_data_row = header_row_count + len(data_rows)
         last_col_letter = get_column_letter(max(1, col_count - 1))
         ws.print_area = f"A1:{last_col_letter}{last_data_row}"
-        # 页面设置：横向、双面打印
+        # 页面设置：横向、A4、无页眉页脚，上下顶格
         ws.page_setup.orientation = "landscape"
         ws.page_setup.paperSize = ws.PAPERSIZE_A4
         ws.page_setup.fitToPage = True
         ws.page_setup.fitToWidth = 1
         ws.page_setup.fitToHeight = 0
         ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.oddHeader.left.text = ""
+        ws.oddHeader.center.text = ""
+        ws.oddHeader.right.text = ""
+        ws.oddFooter.left.text = ""
+        ws.oddFooter.center.text = ""
+        ws.oddFooter.right.text = ""
+        ws.evenHeader.left.text = ""
+        ws.evenHeader.center.text = ""
+        ws.evenHeader.right.text = ""
+        ws.evenFooter.left.text = ""
+        ws.evenFooter.center.text = ""
+        ws.evenFooter.right.text = ""
+        ws.firstHeader.left.text = ""
+        ws.firstHeader.center.text = ""
+        ws.firstHeader.right.text = ""
+        ws.firstFooter.left.text = ""
+        ws.firstFooter.center.text = ""
+        ws.firstFooter.right.text = ""
+        ws.page_margins.top = 0
+        ws.page_margins.bottom = 0
+        ws.page_margins.header = 0
+        ws.page_margins.footer = 0
 
         base_name = os.path.splitext(os.path.basename(b_path))[0]
         date_str = datetime.datetime.now().strftime("%Y%m%d")
@@ -1923,11 +1945,17 @@ class App:
             ws.col(col_idx).width = _col_width(col_idx)
 
         # xlwt 无 page_setup / print_area 属性（勿用 openpyxl 写法）
-        # 横向、A4、整表宽度缩放到 1 页宽（行可多页）；双面需在打印机里选
+        # 横向、A4、整表宽度缩放到 1 页宽（行可多页），无页眉页脚，上下顶格
         ws.portrait = 0  # 0=横向
         ws.paper_size_code = 9  # A4
         ws.fit_width_to_pages = 1
         ws.fit_height_to_pages = 0
+        ws.header_str = b""
+        ws.footer_str = b""
+        ws.top_margin = 0
+        ws.bottom_margin = 0
+        ws.header_margin = 0
+        ws.footer_margin = 0
 
         base_name = os.path.splitext(os.path.basename(b_path))[0]
         date_str = datetime.datetime.now().strftime("%Y%m%d")
