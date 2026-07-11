@@ -1,0 +1,5 @@
+openpyxl
+tkinterdnd2
+xlrd
+xlwt
+

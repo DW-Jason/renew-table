@@ -1,0 +1,798 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>查房表更新工具 - 界面方案</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Microsoft YaHei UI", "Segoe UI", Arial, sans-serif;
+      --ink: #172033;
+      --muted: #657084;
+      --line: #d9e1ea;
+      --blue: #246bfe;
+      --cyan: #0b8e9d;
+      --green: #17835b;
+      --red: #c73b4a;
+      --amber: #a76400;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #eef2f6;
+      color: var(--ink);
+    }
+
+    .page {
+      min-height: 100vh;
+      padding: 32px;
+      display: grid;
+      gap: 32px;
+    }
+
+    .variant {
+      width: 1120px;
+      height: 820px;
+      margin: 0 auto;
+      overflow: hidden;
+      background: #fff;
+      border: 1px solid #cfd8e3;
+      box-shadow: 0 18px 55px rgba(15, 23, 42, 0.14);
+    }
+
+    .label {
+      height: 34px;
+      display: flex;
+      align-items: center;
+      padding: 0 18px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0;
+      color: #516071;
+      background: #f7f9fb;
+      border-bottom: 1px solid #d8e0e8;
+    }
+
+    button, .button {
+      border: 0;
+      font: inherit;
+      cursor: default;
+      white-space: nowrap;
+    }
+
+    .small { font-size: 12px; color: var(--muted); }
+    .mono { font-family: Consolas, "SFMono-Regular", monospace; }
+
+    /* Variant A */
+    .a-shell {
+      height: calc(100% - 34px);
+      display: grid;
+      grid-template-columns: 250px 1fr;
+      background: #f5f8fb;
+    }
+
+    .a-side {
+      padding: 24px 20px;
+      color: #eaf4ff;
+      background: linear-gradient(180deg, #123b57, #0f2c43);
+    }
+
+    .a-brand {
+      font-size: 23px;
+      font-weight: 800;
+      line-height: 1.2;
+      margin-bottom: 8px;
+    }
+
+    .a-side p {
+      margin: 0 0 26px;
+      color: #aac8dc;
+      line-height: 1.6;
+      font-size: 13px;
+    }
+
+    .a-stat {
+      padding: 14px;
+      margin-bottom: 12px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.08);
+      border-radius: 8px;
+    }
+
+    .a-stat strong {
+      display: block;
+      font-size: 26px;
+      color: #fff;
+      margin-bottom: 3px;
+    }
+
+    .a-main {
+      padding: 24px 28px;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 18px;
+    }
+
+    .a-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+
+    .a-title h1 {
+      margin: 0 0 7px;
+      font-size: 26px;
+      letter-spacing: 0;
+    }
+
+    .a-title div { color: var(--muted); font-size: 13px; }
+
+    .a-pill {
+      display: inline-flex;
+      align-items: center;
+      height: 34px;
+      padding: 0 12px;
+      border-radius: 999px;
+      color: #07505a;
+      background: #dff8f8;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .a-files {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .a-drop {
+      min-height: 164px;
+      padding: 18px;
+      border: 1px dashed #97afc4;
+      border-radius: 8px;
+      background: #ffffff;
+      display: grid;
+      align-content: center;
+      gap: 12px;
+    }
+
+    .a-drop b { font-size: 16px; }
+    .a-drop .icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      color: #fff;
+      background: #1d6f93;
+    }
+    .a-drop:nth-child(2) .icon { background: #1e7d54; }
+
+    .a-card {
+      padding: 18px;
+      border: 1px solid #d9e2ec;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .a-grid {
+      display: grid;
+      grid-template-columns: 190px 1fr;
+      gap: 18px;
+    }
+
+    .a-field label, .a-card h2 {
+      display: block;
+      margin: 0 0 10px;
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .a-input, .a-select {
+      height: 40px;
+      width: 100%;
+      border: 1px solid #cbd7e3;
+      border-radius: 6px;
+      background: #fff;
+      padding: 0 11px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+    }
+
+    .bed-grid {
+      display: grid;
+      grid-template-columns: repeat(10, 44px);
+      gap: 7px;
+    }
+
+    .bed {
+      height: 30px;
+      border-radius: 6px;
+      display: grid;
+      place-items: center;
+      border: 1px solid #cbd7e3;
+      background: #f8fafc;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .bed.on {
+      color: #fff;
+      background: #246bfe;
+      border-color: #246bfe;
+    }
+
+    .a-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 16px 18px;
+      border: 1px solid #d8e2ec;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .primary {
+      height: 44px;
+      padding: 0 26px;
+      border-radius: 6px;
+      color: #fff;
+      background: #246bfe;
+      font-weight: 800;
+    }
+
+    .secondary {
+      height: 44px;
+      padding: 0 20px;
+      border-radius: 6px;
+      color: #334155;
+      background: #e9eef5;
+      font-weight: 700;
+    }
+
+    /* Variant B */
+    .b-shell {
+      height: calc(100% - 34px);
+      padding: 32px 44px;
+      background: #fbfcfd;
+    }
+
+    .b-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 22px;
+      border-bottom: 1px solid #e3e8ef;
+    }
+
+    .b-header h1 {
+      margin: 0;
+      font-size: 25px;
+      font-weight: 800;
+    }
+
+    .b-tabs {
+      display: inline-grid;
+      grid-template-columns: repeat(3, auto);
+      gap: 4px;
+      padding: 4px;
+      border-radius: 8px;
+      background: #eef2f6;
+    }
+
+    .b-tabs span {
+      height: 32px;
+      display: grid;
+      place-items: center;
+      padding: 0 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      color: #536172;
+      font-weight: 700;
+    }
+
+    .b-tabs .active {
+      color: #132238;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+    }
+
+    .b-content {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 24px;
+      padding-top: 24px;
+    }
+
+    .b-panel {
+      border: 1px solid #dfe6ee;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .b-upload-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      padding: 18px;
+    }
+
+    .b-upload {
+      height: 148px;
+      border: 1px solid #d8e2eb;
+      border-radius: 8px;
+      padding: 16px;
+      display: grid;
+      align-content: space-between;
+      background: #fbfdff;
+    }
+
+    .b-upload strong { font-size: 16px; }
+    .b-upload .line {
+      height: 8px;
+      border-radius: 999px;
+      background: #e7edf4;
+    }
+    .b-upload .line.short { width: 70%; }
+
+    .b-section {
+      padding: 18px;
+      border-top: 1px solid #e5ebf1;
+    }
+
+    .b-section h2, .b-side h2 {
+      margin: 0 0 14px;
+      font-size: 15px;
+    }
+
+    .b-row {
+      display: grid;
+      grid-template-columns: 120px 180px 1fr;
+      gap: 12px;
+      align-items: end;
+      margin-bottom: 16px;
+    }
+
+    .b-control label {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .b-box {
+      height: 38px;
+      border-radius: 6px;
+      border: 1px solid #ccd7e2;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      color: #1f2a3d;
+      background: #fff;
+      font-weight: 700;
+    }
+
+    .b-bed-grid {
+      display: grid;
+      grid-template-columns: repeat(10, 42px);
+      gap: 6px;
+    }
+
+    .b-side {
+      padding: 18px;
+      border: 1px solid #dfe6ee;
+      border-radius: 8px;
+      background: #fff;
+      height: fit-content;
+    }
+
+    .b-summary {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .b-summary div {
+      padding: 12px;
+      border: 1px solid #e0e7ef;
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+
+    .b-summary b {
+      display: block;
+      font-size: 22px;
+      margin-bottom: 3px;
+    }
+
+    .b-actions {
+      display: grid;
+      gap: 10px;
+    }
+
+    .b-actions .primary,
+    .b-actions .secondary { width: 100%; }
+
+    /* Variant C */
+    .c-shell {
+      height: calc(100% - 34px);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) 70px;
+      background: #f4f5f7;
+    }
+
+    .c-top {
+      padding: 22px 34px 16px;
+      background: #ffffff;
+      border-bottom: 1px solid #dce3eb;
+    }
+
+    .c-top h1 {
+      margin: 0 0 14px;
+      font-size: 25px;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .step {
+      height: 58px;
+      border-radius: 8px;
+      border: 1px solid #dbe3ec;
+      background: #f9fbfd;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 12px;
+    }
+
+    .step b {
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: #59677a;
+      flex: 0 0 auto;
+    }
+
+    .step.active {
+      border-color: #17906f;
+      background: #e9f8f2;
+    }
+
+    .step.active b { background: #17906f; }
+    .step span { font-size: 13px; font-weight: 800; }
+
+    .c-main {
+      min-height: 0;
+      padding: 20px 34px;
+      display: grid;
+      grid-template-columns: 620px 1fr;
+      gap: 22px;
+      overflow: hidden;
+    }
+
+    .c-work {
+      border-radius: 8px;
+      border: 1px solid #dbe3ec;
+      background: #fff;
+      padding: 18px 22px;
+      min-height: 0;
+    }
+
+    .c-work h2 {
+      margin: 0 0 16px;
+      font-size: 18px;
+    }
+
+    .c-drop {
+      height: 104px;
+      border: 1px solid #d4dee9;
+      border-radius: 8px;
+      background: #fbfcfe;
+      display: grid;
+      grid-template-columns: 54px 1fr auto;
+      align-items: center;
+      gap: 14px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+
+    .c-drop .badge {
+      width: 46px;
+      height: 46px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: #3a6ea5;
+      font-weight: 900;
+    }
+
+    .c-drop:nth-of-type(2) .badge { background: #2b8b6d; }
+
+    .c-drop h3 {
+      margin: 0 0 5px;
+      font-size: 16px;
+    }
+
+    .c-drop p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .outline {
+      height: 36px;
+      padding: 0 14px;
+      border-radius: 6px;
+      border: 1px solid #c9d5e1;
+      color: #344054;
+      background: #fff;
+      font-weight: 700;
+    }
+
+    .c-settings {
+      display: grid;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .c-card {
+      border: 1px solid #dbe3ec;
+      border-radius: 8px;
+      background: #fff;
+      padding: 16px 18px;
+    }
+
+    .c-card h2 {
+      margin: 0 0 14px;
+      font-size: 16px;
+    }
+
+    .c-two {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .c-bed-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 42px);
+      gap: 7px;
+    }
+
+    .c-bottom {
+      height: 70px;
+      padding: 12px 34px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #fff;
+      border-top: 1px solid #dce3eb;
+    }
+
+    .c-status {
+      font-weight: 800;
+      color: #174b3d;
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="variant" id="variant-a">
+      <div class="label">方案 A：医院工作台，信息更稳，适合长期使用</div>
+      <div class="a-shell">
+        <aside class="a-side">
+          <div class="a-brand">查房表<br>更新工具</div>
+          <p>把文件导入、床位维护、处理状态放在一个清晰工作台里。适合每天重复操作，扫一眼就知道下一步。</p>
+          <div class="a-stat"><strong>09</strong><span>当前病区</span></div>
+          <div class="a-stat"><strong>26</strong><span>已维护床位</span></div>
+          <div class="a-stat"><strong>30 px</strong><span>输出行高</span></div>
+        </aside>
+        <div class="a-main">
+          <div class="a-top">
+            <div class="a-title">
+              <h1>生成今日查房表</h1>
+              <div>拖入两份 Excel，核对床位范围，然后开始更新。</div>
+            </div>
+            <span class="a-pill">配置已自动保存</span>
+          </div>
+          <div class="a-files">
+            <div class="a-drop">
+              <div class="icon">A</div>
+              <b>病历系统导出列表</b>
+              <span class="small">单击选择，或把 Excel 拖到这里</span>
+            </div>
+            <div class="a-drop">
+              <div class="icon">B</div>
+              <b>昨日查房表</b>
+              <span class="small">用于保留格式并更新床位信息</span>
+            </div>
+          </div>
+          <div class="a-grid">
+            <div class="a-card">
+              <h2>基础设置</h2>
+              <div class="a-field">
+                <label>病区</label>
+                <div class="a-input">09</div>
+              </div>
+              <div class="a-field" style="margin-top:14px">
+                <label>医疗组</label>
+                <div class="a-select">郑羽 <span>v</span></div>
+              </div>
+              <div class="a-field" style="margin-top:14px">
+                <label>数据行高</label>
+                <div class="a-input">30 px</div>
+              </div>
+            </div>
+            <div class="a-card">
+              <h2>床位范围</h2>
+              <div class="bed-grid">
+                <span class="bed on">01</span><span class="bed">02</span><span class="bed">03</span><span class="bed">04</span><span class="bed on">05</span>
+                <span class="bed">06</span><span class="bed">07</span><span class="bed">08</span><span class="bed">09</span><span class="bed">10</span>
+                <span class="bed on">11</span><span class="bed on">12</span><span class="bed on">13</span><span class="bed on">14</span><span class="bed on">15</span>
+                <span class="bed on">16</span><span class="bed on">17</span><span class="bed on">18</span><span class="bed on">19</span><span class="bed on">20</span>
+                <span class="bed on">21</span><span class="bed on">22</span><span class="bed">23</span><span class="bed">24</span><span class="bed">25</span>
+                <span class="bed">26</span><span class="bed">27</span><span class="bed">28</span><span class="bed">29</span><span class="bed">30</span>
+                <span class="bed on">31</span><span class="bed on">32</span><span class="bed on">33</span><span class="bed on">34</span><span class="bed on">35</span>
+                <span class="bed on">36</span><span class="bed on">37</span><span class="bed on">38</span><span class="bed on">39</span><span class="bed on">40</span>
+                <span class="bed on">41</span><span class="bed">42</span><span class="bed">43</span><span class="bed">44</span><span class="bed">45</span>
+                <span class="bed">46</span><span class="bed">47</span><span class="bed">48</span><span class="bed">49</span><span class="bed on">50</span>
+              </div>
+            </div>
+          </div>
+          <div class="a-footer">
+            <div>
+              <b>等待导入两份 Excel</b>
+              <div class="small">会输出 09 病区，郑羽组，26 张床位的更新表。</div>
+            </div>
+            <div>
+              <button class="secondary">清除重选</button>
+              <button class="primary">开始处理</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="variant" id="variant-b">
+      <div class="label">方案 B：极简效率工具，干净、轻、少打扰</div>
+      <div class="b-shell">
+        <div class="b-header">
+          <div>
+            <h1>查房表更新工具</h1>
+            <div class="small" style="margin-top:7px">导入文件，确认参数，生成新版 Excel。</div>
+          </div>
+          <div class="b-tabs"><span class="active">更新</span><span>床位</span><span>记录</span></div>
+        </div>
+        <div class="b-content">
+          <div class="b-panel">
+            <div class="b-upload-row">
+              <div class="b-upload">
+                <strong>A 病历系统导出列表</strong>
+                <span class="small">单击选择，或拖入 .xls / .xlsx 文件</span>
+                <div><div class="line"></div><div class="line short" style="margin-top:8px"></div></div>
+              </div>
+              <div class="b-upload">
+                <strong>B 昨日查房表</strong>
+                <span class="small">保留已有格式，更新今日床位信息</span>
+                <div><div class="line"></div><div class="line short" style="margin-top:8px"></div></div>
+              </div>
+            </div>
+            <div class="b-section">
+              <h2>处理参数</h2>
+              <div class="b-row">
+                <div class="b-control"><label>病区</label><div class="b-box">09</div></div>
+                <div class="b-control"><label>医疗组</label><div class="b-box">郑羽</div></div>
+                <div class="b-control"><label>数据行高</label><div class="b-box">30 px</div></div>
+              </div>
+              <h2>床位</h2>
+              <div class="b-bed-grid">
+                <span class="bed on">01</span><span class="bed">02</span><span class="bed">03</span><span class="bed">04</span><span class="bed on">05</span>
+                <span class="bed">06</span><span class="bed">07</span><span class="bed">08</span><span class="bed">09</span><span class="bed">10</span>
+                <span class="bed on">11</span><span class="bed on">12</span><span class="bed on">13</span><span class="bed on">14</span><span class="bed on">15</span>
+                <span class="bed on">16</span><span class="bed on">17</span><span class="bed on">18</span><span class="bed on">19</span><span class="bed on">20</span>
+                <span class="bed on">21</span><span class="bed on">22</span><span class="bed">23</span><span class="bed">24</span><span class="bed">25</span>
+                <span class="bed">26</span><span class="bed">27</span><span class="bed">28</span><span class="bed">29</span><span class="bed">30</span>
+                <span class="bed on">31</span><span class="bed on">32</span><span class="bed on">33</span><span class="bed on">34</span><span class="bed on">35</span>
+                <span class="bed on">36</span><span class="bed on">37</span><span class="bed on">38</span><span class="bed on">39</span><span class="bed on">40</span>
+                <span class="bed on">41</span><span class="bed">42</span><span class="bed">43</span><span class="bed">44</span><span class="bed">45</span>
+                <span class="bed">46</span><span class="bed">47</span><span class="bed">48</span><span class="bed">49</span><span class="bed on">50</span>
+              </div>
+            </div>
+          </div>
+          <aside class="b-side">
+            <h2>当前任务</h2>
+            <div class="b-summary">
+              <div><b>09</b><span class="small">病区</span></div>
+              <div><b>26</b><span class="small">选中床位</span></div>
+              <div><b>未就绪</b><span class="small">还需要两份 Excel</span></div>
+            </div>
+            <div class="b-actions">
+              <button class="primary">开始处理</button>
+              <button class="secondary">清除重选</button>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="variant" id="variant-c">
+      <div class="label">方案 C：分步骤向导，最适合不熟悉软件的人</div>
+      <div class="c-shell">
+        <div class="c-top">
+          <h1>查房表更新工具</h1>
+          <div class="steps">
+            <div class="step active"><b>1</b><span>导入文件</span></div>
+            <div class="step"><b>2</b><span>维护床位</span></div>
+            <div class="step"><b>3</b><span>核对设置</span></div>
+            <div class="step"><b>4</b><span>生成表格</span></div>
+          </div>
+        </div>
+        <div class="c-main">
+          <section class="c-work">
+            <h2>先选择两份 Excel</h2>
+            <div class="c-drop">
+              <div class="badge">A</div>
+              <div><h3>病历系统导出列表</h3><p>单击选择，或把文件拖到这一行。</p></div>
+              <button class="outline">选择文件</button>
+            </div>
+            <div class="c-drop">
+              <div class="badge">B</div>
+              <div><h3>昨日查房表</h3><p>软件会保留原表样式，并更新今日数据。</p></div>
+              <button class="outline">选择文件</button>
+            </div>
+          </section>
+          <aside class="c-settings">
+            <div class="c-card">
+              <h2>病区与分组</h2>
+              <div class="c-two">
+                <div class="b-control"><label>病区</label><div class="b-box">09</div></div>
+                <div class="b-control"><label>医疗组</label><div class="b-box">郑羽</div></div>
+              </div>
+            </div>
+            <div class="c-card">
+              <h2>常用床位</h2>
+              <div class="c-bed-grid">
+                <span class="bed on">01</span><span class="bed on">05</span><span class="bed on">11</span><span class="bed on">12</span><span class="bed on">13</span>
+                <span class="bed on">14</span><span class="bed on">15</span><span class="bed on">16</span><span class="bed on">17</span><span class="bed on">18</span>
+                <span class="bed on">19</span><span class="bed on">20</span><span class="bed on">21</span><span class="bed on">22</span><span class="bed on">31</span>
+                <span class="bed on">32</span><span class="bed on">33</span><span class="bed on">34</span><span class="bed on">35</span><span class="bed on">36</span>
+                <span class="bed on">37</span><span class="bed on">38</span><span class="bed on">39</span><span class="bed on">40</span><span class="bed on">41</span>
+                <span class="bed on">50</span>
+              </div>
+            </div>
+            <div class="c-card">
+              <h2>输出格式</h2>
+              <div class="b-box">数据行高 30 px</div>
+            </div>
+          </aside>
+        </div>
+        <div class="c-bottom">
+          <div>
+            <div class="c-status">第 1 步：等待导入文件</div>
+            <div class="small">导入完成后会自动进入核对和生成。</div>
+          </div>
+          <div>
+            <button class="secondary">清除</button>
+            <button class="primary">下一步</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

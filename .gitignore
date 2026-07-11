@@ -1,0 +1,25 @@
+# Local/runtime files
+__pycache__/
+*.py[cod]
+.runtime_packages/
+.vscode/
+
+# Build output and caches
+build/
+dist/
+*.spec
+
+# Release binaries are uploaded as GitHub Release assets, not committed
+release/**/*.exe
+release/*.zip
+
+# Local user configuration
+config.ini
+
+# Patient/source spreadsheets, do not publish medical data
+查房表4月/
+*.xls
+*.xlsx
+
+# Local design/debug screenshots
+design-previews/screenshots/
