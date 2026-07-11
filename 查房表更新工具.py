@@ -1373,41 +1373,125 @@ class App:
                 width += 0.9
         return width
 
-    def _estimate_cell_lines(self, value, column_width_chars):
+    def _font_cache_key(self, font_name, font_size):
+        try:
+            size = max(1, int(round(float(font_size or 11))))
+        except Exception:
+            size = 11
+        return (font_name or "Microsoft YaHei UI", size)
+
+    def _get_measure_font(self, font_name, font_size):
+        if not hasattr(self, "_measure_font_cache"):
+            self._measure_font_cache = {}
+        key = self._font_cache_key(font_name, font_size)
+        if key not in self._measure_font_cache:
+            self._measure_font_cache[key] = tkfont.Font(
+                family=key[0],
+                size=key[1],
+            )
+        return self._measure_font_cache[key]
+
+    def _column_width_pixels(self, column_width_chars):
+        try:
+            width = max(1.0, float(column_width_chars or 8.43))
+        except Exception:
+            width = 8.43
+        if width < 1:
+            return max(8, int(width * 12))
+        return max(12, int(math.floor(width * 7 + 5)))
+
+    def _measure_text_pixels(self, text, font_name, font_size):
+        font = self._get_measure_font(font_name, font_size)
+        return max(0, int(font.measure(text)))
+
+    def _estimate_wrapped_lines_pixels(self, text, max_pixels, font_name, font_size):
+        if not text:
+            return 1
+        line_count = 1
+        current_width = 0
+        for ch in text:
+            char_text = "    " if ch == "\t" else ch
+            try:
+                char_width = max(1, self._measure_text_pixels(char_text, font_name, font_size))
+            except Exception:
+                return max(
+                    1,
+                    int(math.ceil(self._text_width_units(text) / max(3.6, float(max_pixels) / 7.0))),
+                )
+            if current_width > 0 and current_width + char_width > max_pixels:
+                line_count += 1
+                current_width = char_width
+            else:
+                current_width += char_width
+        return max(1, line_count)
+
+    def _estimate_cell_lines(self, value, column_width_chars, font_name=None, font_size=11):
         if value is None:
             return 1
         text = str(value)
         if not text:
             return 1
 
-        usable_width = max(3.6, float(column_width_chars or 8) * 0.88)
+        usable_pixels = self._column_width_pixels(column_width_chars)
         line_count = 0
         for part in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-            text_width = self._text_width_units(part)
-            if text_width <= 0:
-                line_count += 1
-            else:
-                line_count += max(1, int(math.ceil(text_width / usable_width)))
+            line_count += self._estimate_wrapped_lines_pixels(
+                part,
+                usable_pixels,
+                font_name,
+                font_size,
+            )
         return max(1, line_count)
 
-    def _estimate_row_height(self, row_data, col_count, get_column_width_chars, get_font_size=None):
+    def _estimate_line_height_points(self, font_name, font_size):
+        try:
+            size = max(1.0, float(font_size or 11))
+        except Exception:
+            size = 11.0
+        try:
+            font = self._get_measure_font(font_name, size)
+            pixels_per_inch = float(self.root.winfo_fpixels("1i"))
+            measured_points = float(font.metrics("linespace")) * 72.0 / pixels_per_inch
+            return max(size + 4.0, measured_points + 1.0)
+        except Exception:
+            return max(size + 4.0, size * 1.25)
+
+    def _estimate_row_height(
+        self,
+        row_data,
+        col_count,
+        get_column_width_chars,
+        get_font_size=None,
+        get_font_name=None,
+    ):
         base_height = self.normalize_row_height_value()
         max_height = base_height
         for col_idx in range(col_count):
             value = row_data[col_idx] if col_idx < len(row_data) else ""
-            lines = self._estimate_cell_lines(value, get_column_width_chars(col_idx))
             font_size = 11
             if get_font_size:
                 try:
                     font_size = float(get_font_size(col_idx) or 11)
                 except Exception:
                     font_size = 11
-            line_height = max(15.0, font_size * 1.36)
+            font_name = None
+            if get_font_name:
+                try:
+                    font_name = get_font_name(col_idx)
+                except Exception:
+                    font_name = None
+            lines = self._estimate_cell_lines(
+                value,
+                get_column_width_chars(col_idx),
+                font_name,
+                font_size,
+            )
+            line_height = self._estimate_line_height_points(font_name, font_size)
             content_height = lines * line_height
             if content_height > max_height:
                 max_height = content_height
 
-        return min(409, int(math.ceil(max_height)))
+        return min(409, math.ceil(max_height * 4) / 4.0)
 
     def process_files(self, a_path, b_path):
         import xlrd
@@ -1590,6 +1674,7 @@ class App:
                     "number_format": source_cell.number_format,
                     "protection": copy(source_cell.protection),
                     "value": copy(source_cell.value),
+                    "font_name": source_cell.font.name or "Microsoft YaHei UI",
                     "font_size": source_cell.font.sz or 11,
                 })
             data_style_rows.append(style_row)
@@ -1643,6 +1728,9 @@ class App:
                 _xlsx_col_width_chars,
                 lambda col_idx, styles=row_source_styles: (
                     styles[col_idx]["font_size"] if styles and col_idx < len(styles) else 11
+                ),
+                lambda col_idx, styles=row_source_styles: (
+                    styles[col_idx]["font_name"] if styles and col_idx < len(styles) else None
                 ),
             )
             ws.row_dimensions[target_row].height = estimated_height
@@ -1921,6 +2009,17 @@ class App:
             except Exception:
                 return 11
 
+        def _xls_font_name(row_idx, col_idx):
+            try:
+                if row_idx >= ws_src.nrows or col_idx >= ws_src.ncols:
+                    return None
+                xf_index = ws_src.cell_xf_index(row_idx, col_idx)
+                src_xf = ws_src.book.xf_list[xf_index]
+                src_font = ws_src.book.font_list[src_xf.font_index]
+                return src_font.name or None
+            except Exception:
+                return None
+
         for i, row_data in enumerate(data_rows):
             rr = n_header + i
             source_rr = data_source_rows[i] if i < len(data_source_rows) else None
@@ -1935,6 +2034,7 @@ class App:
                 col_count,
                 _xls_col_width_chars,
                 lambda col_idx, row_idx=source_rr: _xls_font_size_points(row_idx, col_idx),
+                lambda col_idx, row_idx=source_rr: _xls_font_name(row_idx, col_idx),
             )
             row_obj.height = int(
                 estimated_height * 20
