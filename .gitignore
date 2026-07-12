@@ -15,6 +15,7 @@ release/*.zip
 
 # Local user configuration
 config.ini
+export_a_recording.json
 
 # Patient/source spreadsheets, do not publish medical data
 查房表4月/

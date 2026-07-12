@@ -4,7 +4,11 @@ import sys
 import datetime
 import json
 import math
+import time
+import threading
+import ctypes
 import unicodedata
+from ctypes import wintypes
 from copy import copy
 from collections import defaultdict
 import tkinter as tk
@@ -50,6 +54,18 @@ def get_legacy_config_files():
 
 
 CONFIG_FILE = get_config_file()
+EXPORT_A_RECORDING_FILE = os.path.join(
+    os.path.dirname(CONFIG_FILE),
+    "export_a_recording.json",
+)
+APP_WINDOW_TITLE = "查房表更新工具"
+EXPORT_A_WINDOW_KEYWORDS = [
+    "医生工作站",
+    "医师工作站",
+    "病员管理",
+    "福建省立医院",
+    "胃肠外科",
+]
 
 
 def get_resource_path(relative_path):
@@ -173,7 +189,7 @@ class DropZone(tk.Frame):
             bd=1,
             relief=tk.SOLID,
             bg="#9DB6CE",
-            width=382,
+            width=374,
             height=150,
             cursor="hand2",
         )
@@ -182,11 +198,14 @@ class DropZone(tk.Frame):
         self.inner_frame.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
 
         self.content_frame = tk.Frame(self.inner_frame, bg=color, cursor="hand2")
-        self.content_frame.pack(fill=tk.BOTH, expand=True, padx=18, pady=16)
+        self.content_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=14)
 
         badge_color = "#1D6F93" if zone_letter == "A" else "#1E7D54"
+        self.header_frame = tk.Frame(self.content_frame, bg=color, cursor="hand2")
+        self.header_frame.pack(fill=tk.X, pady=(0, 10))
+
         self.badge_label = tk.Label(
-            self.content_frame,
+            self.header_frame,
             text=zone_letter or "",
             font=(DropZone._ui_font_hint[0], 15, "bold"),
             bg=badge_color,
@@ -195,7 +214,7 @@ class DropZone(tk.Frame):
             height=1,
             cursor="hand2",
         )
-        self.badge_label.pack(anchor=tk.W, pady=(0, 12))
+        self.badge_label.pack(side=tk.LEFT)
 
         self.hint_label = tk.Label(
             self.content_frame,
@@ -220,7 +239,7 @@ class DropZone(tk.Frame):
             anchor=tk.W,
             cursor="hand2",
         )
-        self.path_label.pack(fill=tk.X, pady=(10, 0))
+        self.path_label.pack(fill=tk.X, pady=(6, 0))
 
         self.status_hint_label = tk.Label(
             self.content_frame,
@@ -232,7 +251,7 @@ class DropZone(tk.Frame):
             anchor=tk.W,
             cursor="hand2",
         )
-        self.status_hint_label.pack(fill=tk.X, pady=(4, 0))
+        self.status_hint_label.pack(fill=tk.X, pady=(3, 0))
 
         self.pack_propagate(False)
 
@@ -342,6 +361,688 @@ class DropZone(tk.Frame):
         self.status_hint_label.configure(bg=c)
 
 
+class WinHookPoint(ctypes.Structure):
+    _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
+
+
+class WinMouseHookStruct(ctypes.Structure):
+    _fields_ = [
+        ("pt", WinHookPoint),
+        ("mouseData", wintypes.DWORD),
+        ("flags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", ctypes.c_void_p),
+    ]
+
+
+class WinKeyboardHookStruct(ctypes.Structure):
+    _fields_ = [
+        ("vkCode", wintypes.DWORD),
+        ("scanCode", wintypes.DWORD),
+        ("flags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", ctypes.c_void_p),
+    ]
+
+
+class WindowsWindowHelper:
+    SYSTEM_CLASSES = {
+        "Shell_TrayWnd",
+        "Shell_SecondaryTrayWnd",
+        "Button",
+        "Progman",
+        "WorkerW",
+        "DV2ControlHost",
+    }
+    SW_RESTORE = 9
+    VK_MENU = 0x12
+    KEYEVENTF_KEYUP = 0x0002
+
+    @staticmethod
+    def _hwnd_value(hwnd):
+        value = getattr(hwnd, "value", hwnd)
+        try:
+            return int(value or 0)
+        except Exception:
+            return 0
+
+    @classmethod
+    def _setup(cls):
+        user32 = ctypes.windll.user32
+        user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+        user32.GetWindowTextLengthW.restype = ctypes.c_int
+        user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        user32.GetWindowTextW.restype = ctypes.c_int
+        user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        user32.GetClassNameW.restype = ctypes.c_int
+        user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+        user32.GetWindowRect.restype = wintypes.BOOL
+        user32.IsWindowVisible.argtypes = [wintypes.HWND]
+        user32.IsWindowVisible.restype = wintypes.BOOL
+        user32.IsIconic.argtypes = [wintypes.HWND]
+        user32.IsIconic.restype = wintypes.BOOL
+        user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+        user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+        user32.SetForegroundWindow.restype = wintypes.BOOL
+        user32.BringWindowToTop.argtypes = [wintypes.HWND]
+        user32.BringWindowToTop.restype = wintypes.BOOL
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        return user32
+
+    @classmethod
+    def get_window_text(cls, hwnd):
+        user32 = cls._setup()
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return ""
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buffer, length + 1)
+        return buffer.value.strip()
+
+    @classmethod
+    def get_class_name(cls, hwnd):
+        user32 = cls._setup()
+        buffer = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, buffer, 256)
+        return buffer.value.strip()
+
+    @classmethod
+    def get_window_rect(cls, hwnd):
+        user32 = cls._setup()
+        rect = wintypes.RECT()
+        if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+            return None
+        return [int(rect.left), int(rect.top), int(rect.right), int(rect.bottom)]
+
+    @classmethod
+    def get_window_info(cls, hwnd, action_index=None):
+        if not hwnd:
+            return None
+        title = cls.get_window_text(hwnd)
+        class_name = cls.get_class_name(hwnd)
+        rect = cls.get_window_rect(hwnd)
+        info = {
+            "title": title,
+            "class": class_name,
+            "rect": rect,
+        }
+        if action_index is not None:
+            info["action_index"] = int(action_index)
+        return info
+
+    @classmethod
+    def get_foreground_info(cls, action_index=None):
+        user32 = cls._setup()
+        hwnd = user32.GetForegroundWindow()
+        return cls.get_window_info(hwnd, action_index=action_index)
+
+    @classmethod
+    def is_system_window(cls, info):
+        if not info:
+            return True
+        title = (info.get("title") or "").strip()
+        class_name = (info.get("class") or "").strip()
+        if not title:
+            return True
+        if APP_WINDOW_TITLE in title:
+            return True
+        return class_name in cls.SYSTEM_CLASSES
+
+    @classmethod
+    def _window_matches_keywords(cls, info):
+        title = info.get("title") or ""
+        return any(keyword in title for keyword in EXPORT_A_WINDOW_KEYWORDS)
+
+    @staticmethod
+    def _same_window_info(left, right):
+        return (
+            (left.get("title") or "") == (right.get("title") or "")
+            and (left.get("class") or "") == (right.get("class") or "")
+        )
+
+    @classmethod
+    def append_unique_window(cls, windows, info):
+        if cls.is_system_window(info):
+            return
+        clean = {
+            "title": info.get("title") or "",
+            "class": info.get("class") or "",
+            "rect": info.get("rect"),
+        }
+        if "action_index" in info:
+            clean["action_index"] = int(info.get("action_index") or 0)
+        if not any(cls._same_window_info(existing, clean) for existing in windows):
+            windows.append(clean)
+
+    @classmethod
+    def get_taskbar_rects(cls):
+        user32 = cls._setup()
+        rects = []
+        enum_proc_type = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)(
+            wintypes.BOOL,
+            wintypes.HWND,
+            wintypes.LPARAM,
+        )
+
+        def enum_proc(hwnd, _lparam):
+            class_name = cls.get_class_name(hwnd)
+            if class_name in ("Shell_TrayWnd", "Shell_SecondaryTrayWnd"):
+                rect = cls.get_window_rect(hwnd)
+                if rect:
+                    rects.append(rect)
+            return True
+
+        user32.EnumWindows(enum_proc_type(enum_proc), 0)
+        return rects
+
+    @staticmethod
+    def point_in_rect(x, y, rect, padding=2):
+        if not rect or len(rect) != 4:
+            return False
+        left, top, right, bottom = rect
+        return left - padding <= x <= right + padding and top - padding <= y <= bottom + padding
+
+    @classmethod
+    def action_in_rects(cls, action, rects):
+        if action.get("type") != "mouse":
+            return False
+        try:
+            x = int(float(action.get("x", 0)))
+            y = int(float(action.get("y", 0)))
+        except Exception:
+            return False
+        return any(cls.point_in_rect(x, y, rect) for rect in rects or [])
+
+    @classmethod
+    def select_target_windows(cls, history, actions, taskbar_rects):
+        selected = []
+        for info in history:
+            if cls._window_matches_keywords(info):
+                cls.append_unique_window(selected, info)
+
+        taskbar_indexes = [
+            idx
+            for idx, action in enumerate(actions)
+            if action.get("event") == "up" and cls.action_in_rects(action, taskbar_rects)
+        ]
+        for action_index in taskbar_indexes:
+            for info in history:
+                if int(info.get("action_index", 0)) >= action_index:
+                    cls.append_unique_window(selected, info)
+                    break
+
+        for info in history:
+            cls.append_unique_window(selected, info)
+            if len(selected) >= 8:
+                break
+        return selected[:8]
+
+    @classmethod
+    def enum_visible_windows(cls):
+        user32 = cls._setup()
+        enum_proc_type = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)(
+            wintypes.BOOL,
+            wintypes.HWND,
+            wintypes.LPARAM,
+        )
+        windows = []
+
+        def enum_proc(hwnd, _lparam):
+            if user32.IsWindowVisible(hwnd):
+                info = cls.get_window_info(hwnd)
+                if not cls.is_system_window(info):
+                    info["_hwnd"] = hwnd
+                    windows.append(info)
+            return True
+
+        user32.EnumWindows(enum_proc_type(enum_proc), 0)
+        return windows
+
+    @classmethod
+    def find_recording_target(cls, recording):
+        windows = cls.enum_visible_windows()
+        candidates = recording.get("target_windows") or []
+
+        for candidate in candidates:
+            title = candidate.get("title") or ""
+            class_name = candidate.get("class") or ""
+            for window in windows:
+                if title and title == (window.get("title") or ""):
+                    if not class_name or class_name == (window.get("class") or ""):
+                        return candidate, window
+
+        for candidate in candidates:
+            title = candidate.get("title") or ""
+            if len(title) < 4:
+                continue
+            for window in windows:
+                window_title = window.get("title") or ""
+                if title in window_title or window_title in title:
+                    return candidate, window
+
+        for keyword in EXPORT_A_WINDOW_KEYWORDS:
+            for window in windows:
+                if keyword in (window.get("title") or ""):
+                    return {}, window
+
+        return None, None
+
+    @classmethod
+    def activate_recording_target(cls, recording):
+        user32 = cls._setup()
+        recorded, current = cls.find_recording_target(recording)
+        if not current:
+            return None
+
+        hwnd = current.get("_hwnd")
+        try:
+            user32.ShowWindow(hwnd, cls.SW_RESTORE)
+            user32.BringWindowToTop(hwnd)
+            user32.keybd_event(cls.VK_MENU, 0, 0, 0)
+            user32.SetForegroundWindow(hwnd)
+            user32.keybd_event(cls.VK_MENU, 0, cls.KEYEVENTF_KEYUP, 0)
+            time.sleep(0.35)
+        except Exception:
+            pass
+
+        return {
+            "recorded": recorded or {},
+            "current": {
+                "title": current.get("title") or "",
+                "class": current.get("class") or "",
+                "rect": cls.get_window_rect(hwnd) or current.get("rect"),
+            },
+        }
+
+
+class WindowsActionRecorder:
+    WH_MOUSE_LL = 14
+    WH_KEYBOARD_LL = 13
+    HC_ACTION = 0
+    PM_REMOVE = 0x0001
+
+    WM_MOUSEMOVE = 0x0200
+    WM_LBUTTONDOWN = 0x0201
+    WM_LBUTTONUP = 0x0202
+    WM_RBUTTONDOWN = 0x0204
+    WM_RBUTTONUP = 0x0205
+    WM_MBUTTONDOWN = 0x0207
+    WM_MBUTTONUP = 0x0208
+    WM_MOUSEWHEEL = 0x020A
+    WM_KEYDOWN = 0x0100
+    WM_KEYUP = 0x0101
+    WM_SYSKEYDOWN = 0x0104
+    WM_SYSKEYUP = 0x0105
+    VK_F8 = 0x77
+
+    MSLLHOOKSTRUCT = WinMouseHookStruct
+    KBDLLHOOKSTRUCT = WinKeyboardHookStruct
+
+    def __init__(self, stop_event=None):
+        if sys.platform != "win32":
+            raise RuntimeError("自动录制仅支持 Windows。")
+        self.stop_event = stop_event or threading.Event()
+        self.actions = []
+        self._last_event_time = None
+        self._mouse_hook = None
+        self._keyboard_hook = None
+        self._pressed_buttons = set()
+        self._window_history = []
+        self._last_window_key = None
+        self._last_window_sample = 0.0
+        self._taskbar_rects = []
+        self._hook_proc_type = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)(
+            ctypes.c_ssize_t,
+            ctypes.c_int,
+            wintypes.WPARAM,
+            wintypes.LPARAM,
+        )
+        self._mouse_proc_ref = self._hook_proc_type(self._mouse_proc)
+        self._keyboard_proc_ref = self._hook_proc_type(self._keyboard_proc)
+
+    @staticmethod
+    def _prepare_process_dpi():
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _screen_size():
+        user32 = ctypes.windll.user32
+        return [int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))]
+
+    @staticmethod
+    def _high_word_signed(value):
+        return ctypes.c_short((int(value) >> 16) & 0xFFFF).value
+
+    def _append_action(self, action):
+        now = time.monotonic()
+        if self._last_event_time is None:
+            dt = 0.0
+        else:
+            dt = max(0.0, min(30.0, now - self._last_event_time))
+        self._last_event_time = now
+        action["dt"] = round(dt, 3)
+        self.actions.append(action)
+
+    def _sample_foreground_window(self, force=False):
+        now = time.monotonic()
+        if not force and now - self._last_window_sample < 0.08:
+            return
+        self._last_window_sample = now
+        try:
+            info = WindowsWindowHelper.get_foreground_info(action_index=len(self.actions))
+        except Exception:
+            return
+        if WindowsWindowHelper.is_system_window(info):
+            return
+        key = ((info.get("title") or ""), (info.get("class") or ""))
+        if key == self._last_window_key:
+            return
+        self._last_window_key = key
+        WindowsWindowHelper.append_unique_window(self._window_history, info)
+
+    def _mouse_proc(self, n_code, w_param, l_param):
+        if n_code == self.HC_ACTION:
+            msg = int(w_param)
+            info = ctypes.cast(
+                l_param,
+                ctypes.POINTER(self.MSLLHOOKSTRUCT),
+            ).contents
+            x = int(info.pt.x)
+            y = int(info.pt.y)
+
+            mouse_events = {
+                self.WM_LBUTTONDOWN: ("down", "left"),
+                self.WM_LBUTTONUP: ("up", "left"),
+                self.WM_RBUTTONDOWN: ("down", "right"),
+                self.WM_RBUTTONUP: ("up", "right"),
+                self.WM_MBUTTONDOWN: ("down", "middle"),
+                self.WM_MBUTTONUP: ("up", "middle"),
+            }
+
+            if msg in mouse_events:
+                event, button = mouse_events[msg]
+                if event == "down":
+                    self._pressed_buttons.add(button)
+                elif event == "up":
+                    self._pressed_buttons.discard(button)
+                self._append_action(
+                    {
+                        "type": "mouse",
+                        "event": event,
+                        "button": button,
+                        "x": x,
+                        "y": y,
+                    }
+                )
+            elif msg == self.WM_MOUSEWHEEL:
+                self._append_action(
+                    {
+                        "type": "mouse",
+                        "event": "wheel",
+                        "x": x,
+                        "y": y,
+                        "delta": self._high_word_signed(info.mouseData),
+                    }
+                )
+            elif msg == self.WM_MOUSEMOVE and self._pressed_buttons:
+                self._append_action(
+                    {
+                        "type": "mouse",
+                        "event": "move",
+                        "x": x,
+                        "y": y,
+                    }
+                )
+
+        return ctypes.windll.user32.CallNextHookEx(self._mouse_hook, n_code, w_param, l_param)
+
+    def _keyboard_proc(self, n_code, w_param, l_param):
+        if n_code == self.HC_ACTION:
+            msg = int(w_param)
+            info = ctypes.cast(
+                l_param,
+                ctypes.POINTER(self.KBDLLHOOKSTRUCT),
+            ).contents
+            vk_code = int(info.vkCode)
+            if vk_code == self.VK_F8:
+                self.stop_event.set()
+                return 1
+
+            if msg in (self.WM_KEYDOWN, self.WM_SYSKEYDOWN, self.WM_KEYUP, self.WM_SYSKEYUP):
+                self._append_action(
+                    {
+                        "type": "key",
+                        "event": "down" if msg in (self.WM_KEYDOWN, self.WM_SYSKEYDOWN) else "up",
+                        "vk": vk_code,
+                        "scan": int(info.scanCode),
+                        "flags": int(info.flags),
+                    }
+                )
+
+        return ctypes.windll.user32.CallNextHookEx(self._keyboard_hook, n_code, w_param, l_param)
+
+    def record(self):
+        self._prepare_process_dpi()
+        try:
+            self._taskbar_rects = WindowsWindowHelper.get_taskbar_rects()
+        except Exception:
+            self._taskbar_rects = []
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        user32.SetWindowsHookExW.argtypes = [
+            ctypes.c_int,
+            self._hook_proc_type,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+        ]
+        user32.SetWindowsHookExW.restype = ctypes.c_void_p
+        user32.CallNextHookEx.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            wintypes.WPARAM,
+            wintypes.LPARAM,
+        ]
+        user32.CallNextHookEx.restype = ctypes.c_ssize_t
+        user32.UnhookWindowsHookEx.argtypes = [ctypes.c_void_p]
+        kernel32.GetModuleHandleW.restype = ctypes.c_void_p
+
+        module_handle = kernel32.GetModuleHandleW(None)
+        self._mouse_hook = user32.SetWindowsHookExW(
+            self.WH_MOUSE_LL,
+            self._mouse_proc_ref,
+            module_handle,
+            0,
+        )
+        self._keyboard_hook = user32.SetWindowsHookExW(
+            self.WH_KEYBOARD_LL,
+            self._keyboard_proc_ref,
+            module_handle,
+            0,
+        )
+        if not self._mouse_hook or not self._keyboard_hook:
+            if self._mouse_hook:
+                user32.UnhookWindowsHookEx(self._mouse_hook)
+                self._mouse_hook = None
+            if self._keyboard_hook:
+                user32.UnhookWindowsHookEx(self._keyboard_hook)
+                self._keyboard_hook = None
+            raise RuntimeError("无法启动全局录制钩子，请尝试以普通权限重新打开本程序。")
+
+        try:
+            msg = wintypes.MSG()
+            while not self.stop_event.is_set():
+                while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, self.PM_REMOVE):
+                    user32.TranslateMessage(ctypes.byref(msg))
+                    user32.DispatchMessageW(ctypes.byref(msg))
+                self._sample_foreground_window()
+                time.sleep(0.01)
+        finally:
+            if self._mouse_hook:
+                user32.UnhookWindowsHookEx(self._mouse_hook)
+                self._mouse_hook = None
+            if self._keyboard_hook:
+                user32.UnhookWindowsHookEx(self._keyboard_hook)
+                self._keyboard_hook = None
+
+        self._sample_foreground_window(force=True)
+        target_windows = WindowsWindowHelper.select_target_windows(
+            self._window_history,
+            self.actions,
+            self._taskbar_rects,
+        )
+        return {
+            "version": 2,
+            "recorded_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "stop_hotkey": "F8",
+            "screen": self._screen_size(),
+            "taskbar_rects": self._taskbar_rects,
+            "window_history": self._window_history,
+            "target_windows": target_windows,
+            "actions": self.actions,
+        }
+
+
+class WindowsActionPlayer:
+    MOUSEEVENTF_MOVE = 0x0001
+    MOUSEEVENTF_LEFTDOWN = 0x0002
+    MOUSEEVENTF_LEFTUP = 0x0004
+    MOUSEEVENTF_RIGHTDOWN = 0x0008
+    MOUSEEVENTF_RIGHTUP = 0x0010
+    MOUSEEVENTF_MIDDLEDOWN = 0x0020
+    MOUSEEVENTF_MIDDLEUP = 0x0040
+    MOUSEEVENTF_WHEEL = 0x0800
+    KEYEVENTF_EXTENDEDKEY = 0x0001
+    KEYEVENTF_KEYUP = 0x0002
+
+    def __init__(self, recording):
+        if sys.platform != "win32":
+            raise RuntimeError("自动回放仅支持 Windows。")
+        if not recording or not recording.get("actions"):
+            raise RuntimeError("还没有可用的导出 A 录制。")
+        self.recording = recording
+        self.user32 = ctypes.windll.user32
+        self.target_context = None
+
+    @staticmethod
+    def _prepare_process_dpi():
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+    def _scale_point(self, action):
+        screen = self.recording.get("screen") or []
+        recorded_w = float(screen[0]) if len(screen) > 0 and screen[0] else 0.0
+        recorded_h = float(screen[1]) if len(screen) > 1 and screen[1] else 0.0
+        current_w = float(self.user32.GetSystemMetrics(0))
+        current_h = float(self.user32.GetSystemMetrics(1))
+        sx = current_w / recorded_w if recorded_w else 1.0
+        sy = current_h / recorded_h if recorded_h else 1.0
+        x = int(round(float(action.get("x", 0)) * sx))
+        y = int(round(float(action.get("y", 0)) * sy))
+        x = max(0, min(int(current_w) - 1, x))
+        y = max(0, min(int(current_h) - 1, y))
+        return x, y
+
+    def _point_for_action(self, action):
+        try:
+            raw_x = int(round(float(action.get("x", 0))))
+            raw_y = int(round(float(action.get("y", 0))))
+        except Exception:
+            return self._scale_point(action)
+
+        if self.target_context:
+            recorded_rect = (self.target_context.get("recorded") or {}).get("rect")
+            current_rect = (self.target_context.get("current") or {}).get("rect")
+            if (
+                recorded_rect
+                and current_rect
+                and len(recorded_rect) == 4
+                and len(current_rect) == 4
+                and WindowsWindowHelper.point_in_rect(raw_x, raw_y, recorded_rect)
+            ):
+                r_left, r_top, r_right, r_bottom = [float(v) for v in recorded_rect]
+                c_left, c_top, c_right, c_bottom = [float(v) for v in current_rect]
+                r_width = max(1.0, r_right - r_left)
+                r_height = max(1.0, r_bottom - r_top)
+                c_width = max(1.0, c_right - c_left)
+                c_height = max(1.0, c_bottom - c_top)
+                x = int(round(c_left + (raw_x - r_left) * c_width / r_width))
+                y = int(round(c_top + (raw_y - r_top) * c_height / r_height))
+                return x, y
+
+        return self._scale_point(action)
+
+    def _is_recorded_taskbar_action(self, action):
+        taskbar_rects = self.recording.get("taskbar_rects") or []
+        if taskbar_rects:
+            return WindowsWindowHelper.action_in_rects(action, taskbar_rects)
+
+        if action.get("type") != "mouse":
+            return False
+        screen = self.recording.get("screen") or []
+        if len(screen) < 2 or not screen[1]:
+            return False
+        try:
+            y = int(float(action.get("y", 0)))
+        except Exception:
+            return False
+        return y >= int(screen[1]) - 90
+
+    def replay(self):
+        self._prepare_process_dpi()
+        self.target_context = WindowsWindowHelper.activate_recording_target(self.recording)
+        skip_leading_taskbar = bool(self.target_context)
+        mouse_flags = {
+            ("left", "down"): self.MOUSEEVENTF_LEFTDOWN,
+            ("left", "up"): self.MOUSEEVENTF_LEFTUP,
+            ("right", "down"): self.MOUSEEVENTF_RIGHTDOWN,
+            ("right", "up"): self.MOUSEEVENTF_RIGHTUP,
+            ("middle", "down"): self.MOUSEEVENTF_MIDDLEDOWN,
+            ("middle", "up"): self.MOUSEEVENTF_MIDDLEUP,
+        }
+
+        for action in self.recording.get("actions", []):
+            if skip_leading_taskbar and self._is_recorded_taskbar_action(action):
+                continue
+            skip_leading_taskbar = False
+            time.sleep(max(0.0, min(30.0, float(action.get("dt", 0) or 0))))
+            action_type = action.get("type")
+            if action_type == "mouse":
+                event = action.get("event")
+                x, y = self._point_for_action(action)
+                self.user32.SetCursorPos(x, y)
+                if event == "move":
+                    self.user32.mouse_event(self.MOUSEEVENTF_MOVE, 0, 0, 0, 0)
+                elif event == "wheel":
+                    self.user32.mouse_event(
+                        self.MOUSEEVENTF_WHEEL,
+                        0,
+                        0,
+                        int(action.get("delta", 0) or 0),
+                        0,
+                    )
+                else:
+                    flag = mouse_flags.get((action.get("button"), event))
+                    if flag:
+                        self.user32.mouse_event(flag, 0, 0, 0, 0)
+            elif action_type == "key":
+                flags = 0
+                if int(action.get("flags", 0) or 0) & 0x01:
+                    flags |= self.KEYEVENTF_EXTENDEDKEY
+                if action.get("event") == "up":
+                    flags |= self.KEYEVENTF_KEYUP
+                self.user32.keybd_event(
+                    int(action.get("vk", 0) or 0),
+                    int(action.get("scan", 0) or 0),
+                    flags,
+                    0,
+                )
+
+
 class App:
     def __init__(self, root):
         self.root = root
@@ -352,6 +1053,12 @@ class App:
         self.status_label = None
         self.process_btn = None
         self.clear_btn = None
+        self.export_a_record_btn = None
+        self.export_a_replay_btn = None
+        self.export_a_status_label = None
+        self.export_a_recording_thread = None
+        self.export_a_replay_thread = None
+        self.export_a_recording_stop_event = None
         self.row_height_var = tk.IntVar()
         self.row_height_text_var = tk.StringVar()
         self.ward_var = tk.StringVar()
@@ -398,7 +1105,7 @@ class App:
         return True
 
     def setup_ui(self):
-        self.root.title("查房表更新工具")
+        self.root.title(APP_WINDOW_TITLE)
         self.root.geometry("1080x780")
         self.root.resizable(False, False)
         self.root.configure(bg="#F5F8FB")
@@ -410,9 +1117,6 @@ class App:
 
         font_main = ("Microsoft YaHei UI", 10)
         font_bold = ("Microsoft YaHei UI", 10, "bold")
-        font_title = ("Microsoft YaHei UI", 24, "bold")
-        font_subtitle = ("Microsoft YaHei UI", 10)
-
         style = ttk.Style()
         try:
             style.theme_use("clam")
@@ -504,33 +1208,14 @@ class App:
         main = tk.Frame(shell, bg="#F5F8FB")
         main.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=28, pady=24)
 
-        top_frame = tk.Frame(main, bg="#F5F8FB")
-        top_frame.pack(fill=tk.X, pady=(0, 18))
-
-        title_group = tk.Frame(top_frame, bg="#F5F8FB")
-        title_group.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        tk.Label(
-            title_group,
-            text="生成今日查房表",
-            font=font_title,
-            fg="#07182F",
-            bg="#F5F8FB",
-            anchor=tk.W,
-        ).pack(fill=tk.X)
-        tk.Label(
-            title_group,
-            text="拖入两份 Excel，核对床位范围，然后开始更新。",
-            font=font_subtitle,
-            fg="#657084",
-            bg="#F5F8FB",
-            anchor=tk.W,
-        ).pack(fill=tk.X, pady=(5, 0))
-
         files_frame = tk.Frame(main, bg="#F5F8FB")
-        files_frame.pack(fill=tk.X, pady=(0, 18))
+        files_frame.pack(fill=tk.X, pady=(0, 14))
+
+        file_a_panel = tk.Frame(files_frame, bg="#F5F8FB")
+        file_a_panel.pack(side=tk.LEFT, padx=(0, 16), anchor=tk.N)
 
         self.drop_zone_a = DropZone(
-            files_frame,
+            file_a_panel,
             "病历系统导出列表\n单击选择，或把 Excel 拖到这里",
             color="#FFFFFF",
             zone_letter="A",
@@ -538,10 +1223,40 @@ class App:
         self.drop_zone_a.bind_select(lambda: self.select_file("A"))
         self.drop_zone_a.register_dnd(lambda e: self.on_drop(e, "A"))
         self.drop_zone_a.parent_app = self
-        self.drop_zone_a.pack(side=tk.LEFT, padx=(0, 16))
+        self.drop_zone_a.pack(side=tk.TOP)
+
+        self.export_a_record_btn = tk.Button(
+            self.drop_zone_a.header_frame,
+            text="录制导出A",
+            font=("Microsoft YaHei UI", 9, "bold"),
+            bg="#E9EEF5",
+            fg="#334155",
+            activebackground="#DDE5EE",
+            activeforeground="#07182F",
+            relief=tk.FLAT,
+            width=10,
+            command=self.start_record_export_a,
+        )
+        self.export_a_replay_btn = tk.Button(
+            self.drop_zone_a.header_frame,
+            text="自动导出A",
+            font=("Microsoft YaHei UI", 9, "bold"),
+            bg="#EAF4FF",
+            fg="#1D4ED8",
+            activebackground="#D7E9FF",
+            activeforeground="#1D4ED8",
+            relief=tk.FLAT,
+            width=10,
+            command=self.start_replay_export_a,
+        )
+        self.export_a_replay_btn.pack(side=tk.RIGHT, ipady=2)
+        self.export_a_record_btn.pack(side=tk.RIGHT, padx=(0, 8), ipady=2)
+
+        file_b_panel = tk.Frame(files_frame, bg="#F5F8FB")
+        file_b_panel.pack(side=tk.LEFT, anchor=tk.N)
 
         self.drop_zone_b = DropZone(
-            files_frame,
+            file_b_panel,
             "昨日查房表\n用于保留格式并更新床位信息",
             color="#FFFFFF",
             zone_letter="B",
@@ -549,7 +1264,7 @@ class App:
         self.drop_zone_b.bind_select(lambda: self.select_file("B"))
         self.drop_zone_b.register_dnd(lambda e: self.on_drop(e, "B"))
         self.drop_zone_b.parent_app = self
-        self.drop_zone_b.pack(side=tk.LEFT)
+        self.drop_zone_b.pack(side=tk.TOP)
 
         work_frame = tk.Frame(main, bg="#F5F8FB")
         work_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 18))
@@ -798,12 +1513,12 @@ class App:
 
         footer_outer, footer = make_card(main)
         footer_outer.pack(fill=tk.X)
-        footer_outer.configure(height=86)
+        footer_outer.configure(height=118)
         footer_outer.pack_propagate(False)
-        footer.configure(padx=18, pady=14)
+        footer.configure(padx=18, pady=12)
         footer.columnconfigure(0, weight=1)
-        footer.columnconfigure(1, minsize=310)
-        footer.rowconfigure(0, minsize=56)
+        footer.rowconfigure(0, minsize=38)
+        footer.rowconfigure(1, minsize=50)
 
         self.status_label = tk.Label(
             footer,
@@ -813,14 +1528,14 @@ class App:
             fg="#07182F",
             anchor=tk.W,
             justify=tk.LEFT,
-            wraplength=620,
+            wraplength=720,
             height=2,
         )
-        self.status_label.grid(row=0, column=0, sticky=tk.EW, padx=(0, 14))
+        self.status_label.grid(row=0, column=0, sticky=tk.EW, pady=(0, 8))
 
         button_frame = tk.Frame(footer, bg="#FFFFFF")
-        button_frame.grid(row=0, column=1, sticky=tk.NSEW)
-        button_frame.configure(width=310, height=56)
+        button_frame.grid(row=1, column=0, sticky=tk.E)
+        button_frame.configure(width=464, height=50)
         button_frame.grid_propagate(False)
         button_frame.columnconfigure(0, weight=1, uniform="footer_buttons")
         button_frame.columnconfigure(1, weight=1, uniform="footer_buttons")
@@ -861,6 +1576,8 @@ class App:
 
         self.update_button_state()
         self.update_status()
+        self.update_export_a_buttons()
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def current_group_name(self):
         name = self.group_var.get().strip()
@@ -1111,6 +1828,292 @@ class App:
         path = filedialog.askopenfilename(title=title, filetypes=filetypes)
         if path:
             self.set_file(zone, path)
+
+    def load_export_a_recording(self):
+        try:
+            if not os.path.exists(EXPORT_A_RECORDING_FILE):
+                return None
+            with open(EXPORT_A_RECORDING_FILE, "r", encoding="utf-8") as f:
+                recording = json.load(f)
+            actions = recording.get("actions") if isinstance(recording, dict) else None
+            if not isinstance(actions, list) or not actions:
+                return None
+            return recording
+        except Exception:
+            return None
+
+    def save_export_a_recording(self, recording):
+        config_dir = os.path.dirname(EXPORT_A_RECORDING_FILE)
+        if config_dir:
+            os.makedirs(config_dir, exist_ok=True)
+        with open(EXPORT_A_RECORDING_FILE, "w", encoding="utf-8") as f:
+            json.dump(recording, f, ensure_ascii=False, indent=2)
+
+    def has_export_a_recording(self):
+        return self.load_export_a_recording() is not None
+
+    def _is_thread_running(self, thread):
+        return bool(thread and thread.is_alive())
+
+    def _set_export_a_status(self, message, color="#657084"):
+        if self.export_a_status_label:
+            self.export_a_status_label.config(text=message, fg=color)
+
+    def update_export_a_buttons(self):
+        recording_active = self._is_thread_running(self.export_a_recording_thread)
+        replay_active = self._is_thread_running(self.export_a_replay_thread)
+        busy = recording_active or replay_active
+        has_recording = self.has_export_a_recording()
+
+        if self.export_a_record_btn:
+            self.export_a_record_btn.config(
+                text="录制中..." if recording_active else "录制导出A",
+                state=tk.DISABLED if busy else tk.NORMAL,
+            )
+        if self.export_a_replay_btn:
+            self.export_a_replay_btn.config(
+                text="执行中..." if replay_active else "自动导出A",
+                state=tk.NORMAL if has_recording and not busy else tk.DISABLED,
+            )
+        if not busy:
+            if has_recording:
+                self._set_export_a_status("已保存导出动作，可直接自动导入列表 A。", "#17835B")
+
+    def start_record_export_a(self):
+        if sys.platform != "win32":
+            messagebox.showwarning("提示", "自动录制仅支持 Windows。")
+            return
+        if self._is_thread_running(self.export_a_recording_thread):
+            return
+        ok = messagebox.askokcancel(
+            "录制导出A",
+            "点击确定后，本窗口会最小化。\n"
+            "请在医师工作站里完整操作一次“导出患者列表 A”。\n"
+            "程序会记录目标窗口，之后任务栏图标位置变化也能识别。\n"
+            "导出完成后按 F8 停止录制。",
+        )
+        if not ok:
+            return
+
+        self.export_a_recording_stop_event = threading.Event()
+        self._set_export_a_status("录制准备中，完成导出后按 F8 停止。", "#246BFE")
+        try:
+            self.root.iconify()
+        except tk.TclError:
+            pass
+        self.export_a_recording_thread = threading.Thread(
+            target=self._record_export_a_worker,
+            daemon=True,
+        )
+        self.export_a_recording_thread.start()
+        self.update_export_a_buttons()
+
+    def _record_export_a_worker(self):
+        recording = None
+        error = None
+        try:
+            time.sleep(0.8)
+            recorder = WindowsActionRecorder(self.export_a_recording_stop_event)
+            recording = recorder.record()
+            if not recording.get("actions"):
+                error = "没有录制到任何操作。"
+            else:
+                self.save_export_a_recording(recording)
+        except Exception as exc:
+            error = str(exc)
+
+        def finish():
+            self.export_a_recording_thread = None
+            self.export_a_recording_stop_event = None
+            try:
+                self.root.deiconify()
+                self.root.lift()
+            except tk.TclError:
+                pass
+            if error:
+                self._set_export_a_status(f"录制失败：{error}", "#C73B4A")
+                messagebox.showerror("录制失败", error)
+            else:
+                count = len(recording.get("actions", [])) if recording else 0
+                self._set_export_a_status(f"录制完成，已保存 {count} 个动作。", "#17835B")
+                messagebox.showinfo("录制完成", "导出 A 的自动动作已保存。")
+            self.update_export_a_buttons()
+
+        try:
+            self.root.after(0, finish)
+        except tk.TclError:
+            pass
+
+    def start_replay_export_a(self):
+        if sys.platform != "win32":
+            messagebox.showwarning("提示", "自动回放仅支持 Windows。")
+            return
+        if self._is_thread_running(self.export_a_replay_thread):
+            return
+
+        recording = self.load_export_a_recording()
+        if not recording:
+            messagebox.showwarning("提示", "还没有录制导出 A 的动作，请先录制一次。")
+            self.update_export_a_buttons()
+            return
+
+        self._set_export_a_status("正在自动导出列表 A，请稍候...", "#246BFE")
+        try:
+            self.root.iconify()
+        except tk.TclError:
+            pass
+        self.export_a_replay_thread = threading.Thread(
+            target=self._replay_export_a_worker,
+            args=(recording,),
+            daemon=True,
+        )
+        self.export_a_replay_thread.start()
+        self.update_export_a_buttons()
+
+    def _excel_search_dirs(self):
+        candidates = [
+            get_app_dir(),
+            os.getcwd(),
+            os.path.dirname(CONFIG_FILE),
+        ]
+        if self.file_a:
+            candidates.append(os.path.dirname(self.file_a))
+        user_home = os.path.expanduser("~")
+        if user_home and os.path.isdir(user_home):
+            candidates.extend(
+                [
+                    user_home,
+                    os.path.join(user_home, "Desktop"),
+                    os.path.join(user_home, "Downloads"),
+                    os.path.join(user_home, "Documents"),
+                    os.path.join(user_home, "桌面"),
+                    os.path.join(user_home, "下载"),
+                    os.path.join(user_home, "文档"),
+                ]
+            )
+
+        result = []
+        seen = set()
+        for folder in candidates:
+            if not folder:
+                continue
+            try:
+                full = os.path.abspath(folder)
+            except Exception:
+                continue
+            key = os.path.normcase(full)
+            if key in seen or not os.path.isdir(full):
+                continue
+            seen.add(key)
+            result.append(full)
+        return result
+
+    def _snapshot_excel_files(self):
+        snapshot = {}
+        for folder in self._excel_search_dirs():
+            try:
+                names = os.listdir(folder)
+            except Exception:
+                continue
+            for name in names:
+                if name.startswith("~$"):
+                    continue
+                ext = os.path.splitext(name)[1].lower()
+                if ext not in (".xls", ".xlsx"):
+                    continue
+                path = os.path.join(folder, name)
+                try:
+                    snapshot[os.path.abspath(path)] = (
+                        os.path.getmtime(path),
+                        os.path.getsize(path),
+                    )
+                except OSError:
+                    continue
+        return snapshot
+
+    def _is_excel_file_stable(self, path):
+        try:
+            size_1 = os.path.getsize(path)
+            mtime_1 = os.path.getmtime(path)
+            time.sleep(0.35)
+            return size_1 == os.path.getsize(path) and mtime_1 == os.path.getmtime(path)
+        except OSError:
+            return False
+
+    def _find_new_excel_file(self, before_snapshot, started_at):
+        after_snapshot = self._snapshot_excel_files()
+        candidates = []
+        for path, signature in after_snapshot.items():
+            old_signature = before_snapshot.get(path)
+            if old_signature == signature:
+                continue
+            mtime, _size = signature
+            if mtime >= started_at - 3:
+                candidates.append((mtime, path))
+        if not candidates:
+            return None
+        candidates.sort(reverse=True)
+        return candidates[0][1]
+
+    def _wait_for_new_excel_file(self, before_snapshot, started_at, timeout=25):
+        deadline = time.time() + timeout
+        latest_path = None
+        while time.time() < deadline:
+            latest_path = self._find_new_excel_file(before_snapshot, started_at)
+            if latest_path and self._is_excel_file_stable(latest_path):
+                return latest_path
+            time.sleep(0.5)
+        return latest_path
+
+    def _replay_export_a_worker(self, recording):
+        found_path = None
+        error = None
+        started_at = time.time()
+        before_snapshot = self._snapshot_excel_files()
+        try:
+            time.sleep(0.8)
+            WindowsActionPlayer(recording).replay()
+            found_path = self._wait_for_new_excel_file(before_snapshot, started_at)
+        except Exception as exc:
+            error = str(exc)
+
+        def finish():
+            self.export_a_replay_thread = None
+            try:
+                self.root.deiconify()
+                self.root.lift()
+            except tk.TclError:
+                pass
+            if error:
+                self._set_export_a_status(f"自动导出失败：{error}", "#C73B4A")
+                messagebox.showerror("自动导出失败", error)
+            elif found_path:
+                self.set_file("A", found_path)
+                self._set_export_a_status(
+                    f"已自动导入列表 A：{os.path.basename(found_path)}",
+                    "#17835B",
+                )
+            else:
+                self._set_export_a_status("已执行动作，但未发现新 Excel。请手动选择列表 A。", "#A76400")
+                messagebox.showwarning(
+                    "未找到导出文件",
+                    "自动动作已执行，但没有在常用位置发现新的 Excel 文件。\n"
+                    "如果文件已导出，请手动选择列表 A。",
+                )
+            self.update_export_a_buttons()
+
+        try:
+            self.root.after(0, finish)
+        except tk.TclError:
+            pass
+
+    def on_close(self):
+        if self.export_a_recording_stop_event:
+            self.export_a_recording_stop_event.set()
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
 
     def update_button_state(self):
         ready = bool(self.file_a and self.file_b)
