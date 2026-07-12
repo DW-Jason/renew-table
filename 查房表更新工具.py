@@ -395,6 +395,8 @@ class WindowsWindowHelper:
         "DV2ControlHost",
     }
     SW_RESTORE = 9
+    SW_SHOW = 5
+    SW_SHOWMAXIMIZED = 3
     VK_MENU = 0x12
     KEYEVENTF_KEYUP = 0x0002
 
@@ -421,6 +423,8 @@ class WindowsWindowHelper:
         user32.IsWindowVisible.restype = wintypes.BOOL
         user32.IsIconic.argtypes = [wintypes.HWND]
         user32.IsIconic.restype = wintypes.BOOL
+        user32.IsZoomed.argtypes = [wintypes.HWND]
+        user32.IsZoomed.restype = wintypes.BOOL
         user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
         user32.SetForegroundWindow.argtypes = [wintypes.HWND]
         user32.SetForegroundWindow.restype = wintypes.BOOL
@@ -465,6 +469,8 @@ class WindowsWindowHelper:
             "title": title,
             "class": class_name,
             "rect": rect,
+            "maximized": bool(user32.IsZoomed(hwnd)),
+            "minimized": bool(user32.IsIconic(hwnd)),
         }
         if action_index is not None:
             info["action_index"] = int(action_index)
@@ -508,6 +514,7 @@ class WindowsWindowHelper:
             "title": info.get("title") or "",
             "class": info.get("class") or "",
             "rect": info.get("rect"),
+            "maximized": bool(info.get("maximized")),
         }
         if "action_index" in info:
             clean["action_index"] = int(info.get("action_index") or 0)
@@ -636,7 +643,13 @@ class WindowsWindowHelper:
 
         hwnd = current.get("_hwnd")
         try:
-            user32.ShowWindow(hwnd, cls.SW_RESTORE)
+            if user32.IsIconic(hwnd):
+                if (recorded or {}).get("maximized"):
+                    user32.ShowWindow(hwnd, cls.SW_SHOWMAXIMIZED)
+                else:
+                    user32.ShowWindow(hwnd, cls.SW_RESTORE)
+            else:
+                user32.ShowWindow(hwnd, cls.SW_SHOW)
             user32.BringWindowToTop(hwnd)
             user32.keybd_event(cls.VK_MENU, 0, 0, 0)
             user32.SetForegroundWindow(hwnd)
@@ -651,6 +664,7 @@ class WindowsWindowHelper:
                 "title": current.get("title") or "",
                 "class": current.get("class") or "",
                 "rect": cls.get_window_rect(hwnd) or current.get("rect"),
+                "maximized": bool(user32.IsZoomed(hwnd)),
             },
         }
 
